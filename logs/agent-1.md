@@ -30,3 +30,11 @@ Append-only. Written by agent-1 only.
 **What:** Measured camera rate on unit 5 (USB C270): ~20 fps via callback API
 **Notes:** 299 frames in 15 s with camera_example1_callback -u 5 (includes startup, so steady rate is at least 20 fps). Per-frame callback cost about 2 ms. Gate 1 needs 5+ detections/s, so capture is not the limit. Frames-on-screen still not shown: no camera dev headers in /usr/include/camera on the Pi, and camera_example4_record hangs without writing a file (a 30 MB core from it already sits in ~/cores). Needs a monitor + camera_example3_viewfinder to close. Also: qnxpi.local sometimes fails to resolve for a while; just retry by name.
 
+## 2026-11-21 14:38:52 | agent-1 | P0-2 | DONE
+**What:** P0-2 DONE: pod_msgs.h v1 accepted. Human owner reports P0-4 sign-off by the other agents
+**Notes:** Sign-off reported verbally by agent-1's human, not recorded by the other agents in the repo. The P0-4 row is shared ('all'), so agent-1 left it for a human to mark DONE.
+
+## 2026-11-21 14:38:52 | agent-1 | P1-1 | DOING
+**What:** Claiming P1-1: pod-capture (camera callback -> 4-slot shm ring -> pulse to infer)
+**Notes:** Plan: pod/ipc/ring.h first (portable, testable on the laptop), then pod/capture/ on QNX. Risk: no camera dev headers found in /usr/include/camera on the Pi; checking before writing the camera callback.
+
