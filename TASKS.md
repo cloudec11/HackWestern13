@@ -42,7 +42,7 @@ Claim a task by setting `DOING` and committing that change **before** starting w
 | P0-3 | Draft `shared/event_schema.json` (visit event, heartbeat) | agent-3 | REVIEW | — |
 | P0-4 | Review and sign off both contract files (all four agents + humans) | all | TODO | P0-2, P0-3 |
 | P0-5 | Pi boots, SSH works, camera frames on screen (Gate 0) | agent-1 | REVIEW | — |
-| P0-6 | TFLite runs on the Pi (minimal / label_image) | agent-2 | TODO | P0-5 |
+| P0-6 | TFLite runs on the Pi (minimal / label_image) | agent-2 | DOING | P0-5 |
 | P0-7 | Network plan: laptop + Pi on same subnet, Ethernet fallback with static IP | agent-1 | REVIEW | — |
 
 **Gate 0:** camera frames on screen and the model runs on the Pi. Fallback: Pi Camera Module 3, or file camera.
