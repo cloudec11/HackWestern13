@@ -53,7 +53,7 @@ Claim a task by setting `DOING` and committing that change **before** starting w
 |----|------|-------|--------|------------|
 | P1-1 | `pod-capture`: camera callback → shared-memory ring buffer (4 slots) → pulse to infer | agent-1 | REVIEW | P0-4, P0-5 |
 | P1-2 | `pod-infer`: newest frame → preprocess → TFLite → print detections with `t_capture`, `t_infer_done` | agent-2 | TODO | P0-4, P0-6 |
-| P1-3 | FastAPI ingest (`POST /api/events`, `/api/heartbeat`, `GET /api/summary`) + SQLite, idempotent on `(pod_id, seq)` | agent-3 | REVIEW | P0-3 |
+| P1-3 | Ingest API, stdlib only (`POST /api/events`, `/api/heartbeat`, `GET /api/summary`) + SQLite, idempotent on `(pod_id, seq)` | agent-3 | REVIEW | P0-3 |
 | P1-4 | Fake-event generator so the dashboard is not blocked | agent-3 | REVIEW | P0-3 |
 | P1-5 | Dashboard skeleton, four panels on fake data | agent-4 | TODO | P1-4 |
 
@@ -66,7 +66,7 @@ Claim a task by setting `DOING` and committing that change **before** starting w
 | P2-1 | `pod-track`: IoU tracker, one visit event per animal visit | agent-2 | TODO | P1-2 |
 | P2-2 | `pod-log`: JSONL with seq numbers + thumbnails, rotation | agent-1 | TODO | P0-4, P2-1 |
 | P2-3 | `pod-uplink`: store-and-forward, cursor advances on ack only | agent-1 | DOING | P1-3, P2-2 |
-| P2-4 | Density estimate (Random Encounter Model) from real events | agent-3 | TODO | P1-3 |
+| P2-4 | Density estimate (Random Encounter Model) from real events | agent-3 | DOING | P1-3 |
 | P2-5 | Ricker Monte Carlo simulation (notebook, then `simulate.py`) | agent-3 | TODO | P2-4 |
 | P2-6 | Dashboard: live feed + Pod health panel on real data | agent-4 | TODO | P1-5, P2-3 |
 
