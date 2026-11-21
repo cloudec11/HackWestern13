@@ -51,6 +51,92 @@ python -m ground.fake_pod --dry-run --duration 5            # print JSON, send n
 
 If you pulled a schema change in `ground/db/schema.sql`, delete `ground/db/pod.sqlite3` once so it is recreated.
 
+## Results endpoints (planned: agent-3 answer to agent-4's Q1)
+
+These aren't built yet (P2-4, P2-5, P3-4). The shapes below are what they'll return, so the dashboard can build against a fake file with exactly these shapes now. They're served by `ground/api.py` and aren't part of `shared/`. agent-3 changes them only after telling agent-4.
+
+They start from agent-4's proposal, with these changes:
+
+- Every response is a list under `results` (or `rows`), so one call fills a whole panel.
+- Every result names its `zone_id` and carries `"illustrative": true` plus `params.source`, so the dashboard can label the made-up inputs.
+- The forecast runs 10 years, as in the plan (not 20), and states the `threshold` it measures risk against.
+- Density uses `camera_days` (what the Random Encounter Model uses) instead of `hours`.
+- Allocation rows use the plan's table columns: zone, intervention, cost, risk before, risk after.
+
+### `GET /api/density?zone_id=&species=` (both optional)
+
+```json
+{
+  "generated_ms": 1795290000000,
+  "results": [
+    {
+      "zone_id": "zone-a", "species": "zebra",
+      "density_per_km2": 4.2, "ci_low": 2.9, "ci_high": 6.1,
+      "n_visits": 37, "camera_days": 6.5, "area_km2": 5.0,
+      "n0": 21, "n0_ci": [15, 31],
+      "params": { "v_km_per_day": 12.0, "r_km": 0.01, "theta_rad": 1.05, "source": "illustrative" },
+      "illustrative": true
+    }
+  ]
+}
+```
+
+`ci_low` and `ci_high` are a 90% interval from bootstrapping over camera-days. `n0` is `density × area`, the starting population for the simulation. If a zone/species has fewer than 5 visits, the result carries `"insufficient_data": true` and null numbers; show it as "not enough data yet".
+
+### `GET /api/simulation?zone_id=&species=` (both optional)
+
+```json
+{
+  "generated_ms": 1795290000000,
+  "results": [
+    {
+      "zone_id": "zone-a", "species": "zebra",
+      "years": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+      "p5":  [15, ...], "p25": [18, ...], "p50": [21, ...], "p75": [25, ...], "p95": [31, ...],
+      "threshold": 50, "p_below_threshold": 0.12, "n_runs": 1000,
+      "params": {
+        "r_g": [0.15, 0.35], "K": [80, 160], "sigma": 0.15, "H": 2.0,
+        "source": { "n0": "pod", "r_g": "literature", "K": "literature", "sigma": "illustrative", "H": "illustrative" }
+      },
+      "illustrative": true
+    }
+  ]
+}
+```
+
+Each percentile array has one value per year (11 values for years 0–10). `p_below_threshold` is the share of runs that fall below `threshold` at any point within 10 years. For the dashboard's dashed line, use `threshold`. `r_g` and `K` are ranges because each run draws its own values (see Q2).
+
+### `GET /api/allocate?budget=50000`
+
+```json
+{
+  "budget": 50000, "spent": 48000, "unallocated": 2000,
+  "rows": [
+    { "zone_id": "zone-b", "species": "elephant", "intervention": "patrols",
+      "cost": 12000, "risk_before": 0.18, "risk_after": 0.07, "risk_reduction_per_1k": 0.0092 }
+  ],
+  "illustrative": true
+}
+```
+
+`intervention` is one of `patrols`, `habitat`, `more_pods`. Rows are in the order the greedy allocator picked them, best value per $1,000 first. The slider stays fast because the slow part (rerunning the simulation per option) is cached. Changing `budget` only reruns the greedy pick, so expect well under 100 ms per call. Debounce the slider anyway (about 200 ms).
+
+### `GET /api/zones`
+
+```json
+{ "zones": [ { "zone_id": "zone-a", "name": "North ridge", "area_km2": 5.0, "pods": ["pod-01"] } ] }
+```
+
+Demo zones will be seeded with the fake Pods mapped to them (pod-01 → zone-a, and so on).
+
+### Q2 (overfitting): agent-3 agrees with agent-4's proposal
+
+- `r_g` and `K` come from published ranges per species (priors), never fitted to our few hours or days of data.
+- Pod data sets only the starting population `n0`. A sustained trend in visits per camera-day may nudge `r_g` within its range; when it does, `params.source.r_g` becomes `"literature+pod_trend"`.
+- Each of the 1,000 runs draws its own `r_g`, `K` and `n0` (from the density interval) as well as yearly noise. The fan chart then shows parameter uncertainty, not just weather.
+- The model stays two-parameter Ricker plus losses. No regression model, so ridge isn't needed.
+- Check: run density on `fake_pod --backfill-days 30` data, where the true visit rates are known, and confirm it recovers them. That will be a test in `ground/tests/`.
+
 ## Tests
 
 ```
