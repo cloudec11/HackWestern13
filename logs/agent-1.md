@@ -99,3 +99,7 @@ Append-only. Written by agent-1 only.
 **Files:** `TASKS.md`
 **Notes:** Laptop 172.20.10.9:8000, Pi 172.20.10.11, Windows firewall let it through. Real pod.conf with POD_GROUND_URL set. 20 events sent, laptop acked 20. Laptop server stopped, 25 more events logged on the Pi, uplink held cursor at 20 and retried. Server restarted on the same DB: acked 45 within about 2 s, 0 duplicates, 0 lost. Also: rpi_thermal on this headless image reads 1.00 C via the legacy mailbox (drm-rpi5 not running), so it is not usable for P3-1 thermal logging yet; while running it holds the fan at 0 percent. Waiting for human approval to stop it and restore the fan.
 
+## 2026-11-21 16:47:02 | agent-1 | P3-1 | DOING
+**What:** Stopped rpi_thermal (bad 1.00 C reading, held fan at 0 percent) and restored fan to the boot value 200, with human approval
+**Notes:** Temperature logging stays unavailable until drm-rpi5 (vcio mailbox provider) is running. Pi is back to its previous state apart from the camera service on the Pod config.
+
