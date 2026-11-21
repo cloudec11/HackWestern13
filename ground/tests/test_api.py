@@ -180,3 +180,20 @@ def test_errors_are_json_with_path(client):
     body = r.json()
     assert r.headers["Content-Type"] == "application/json"
     assert body["detail"][0]["path"] == "events/0/species"
+
+
+def test_scene_for_habitat_view(client):
+    import time
+    now = int(time.time() * 1000)
+    assert client.get("/api/scene").json()["animals"] == []          # nothing yet, still valid
+    evs = [ev(1, t_start_ms=now - 60_000, t_end_ms=now - 50_000, species="zebra", class_id=9),
+           ev(2, t_start_ms=now - 40_000, t_end_ms=now - 30_000, species="zebra", class_id=9),
+           ev(3, t_start_ms=now - 20_000, t_end_ms=now - 10_000, species="teddy_bear", class_id=11),
+           ev(4, t_start_ms=now - 48 * 3_600_000, t_end_ms=now - 47 * 3_600_000)]   # too old for 24 h
+    assert post(client, batch(*evs)).status_code == 200
+    s = client.get("/api/scene").json()
+    assert s["pod_id"] == "pod-01" and s["biome"] == "savanna" and s["weather"]["condition"] == "clear"
+    assert s["animals"] == [{"species": "zebra", "count": 2}, {"species": "teddy_bear", "count": 1}]
+    assert client.get("/api/scene", params={"hours": 72}).json()["animals"][0] == {"species": "zebra", "count": 2}
+    assert {"species": "sheep", "count": 1} in client.get("/api/scene", params={"hours": 72}).json()["animals"]
+    assert client.get("/api/scene", params={"hours": 0}).status_code == 422

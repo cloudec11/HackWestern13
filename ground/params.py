@@ -45,12 +45,14 @@ SPECIES_SOURCE = "illustrative"
 # ---- Zones ----
 # Each Pod belongs to one zone. Area is what turns density (per km^2) into a
 # head count for the simulation. Pods not listed here go to UNASSIGNED_ZONE.
+# biome is what agent-4's habitat view draws (forest, savanna, desert, snow): a per-zone
+# setting until something on the Pod can classify habitat.
 ZONES = [
-    {"zone_id": "zone-a", "name": "North ridge",   "area_km2": 5.0, "pods": ["pod-01"]},
-    {"zone_id": "zone-b", "name": "River valley",  "area_km2": 8.0, "pods": ["pod-02"]},
-    {"zone_id": "zone-c", "name": "South plains",  "area_km2": 3.0, "pods": ["pod-03"]},
+    {"zone_id": "zone-a", "name": "North ridge",   "area_km2": 5.0, "pods": ["pod-01"], "biome": "savanna"},
+    {"zone_id": "zone-b", "name": "River valley",  "area_km2": 8.0, "pods": ["pod-02"], "biome": "forest"},
+    {"zone_id": "zone-c", "name": "South plains",  "area_km2": 3.0, "pods": ["pod-03"], "biome": "desert"},
 ]
-UNASSIGNED_ZONE = {"zone_id": "unassigned", "name": "Unassigned Pods", "area_km2": 1.0}
+UNASSIGNED_ZONE = {"zone_id": "unassigned", "name": "Unassigned Pods", "area_km2": 1.0, "biome": "savanna"}
 
 # ---- Density method settings ----
 MIN_VISITS = 5            # fewer visits than this -> "insufficient_data"

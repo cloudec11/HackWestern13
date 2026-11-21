@@ -19,6 +19,7 @@ Endpoints:
     GET  /api/events     ?pod_id=&species=&since_ms=&limit=200
     GET  /api/zones      zones, their area and Pods
     GET  /api/density    ?zone_id=&species=   Random Encounter Model estimates (ground/density.py)
+    GET  /api/scene      ?pod_id=&hours=24    scene JSON for the habitat view (ground/dashboard/sim)
     GET  /health         liveness check
 
 Errors are JSON: {"detail": [{"path": ..., "error": ...}, ...]} with HTTP 422
@@ -263,6 +264,36 @@ class App:
                 _int_param(q, "since_ms", None), _int_param(q, "limit", 200, 1, 10000)),
             ("GET", "/api/zones"): self.get_zones,
             ("GET", "/api/density"): self.get_density,
+            ("GET", "/api/scene"): self.get_scene,
+        }
+
+    def get_scene(self, environ: dict, q: dict) -> dict:
+        """Scene JSON for agent-4's habitat view (ground/dashboard/sim): what one Pod
+        has seen recently. Animals are real visit counts; biome is the zone's
+        configured setting; weather is a placeholder until someone owns weather."""
+        hours = _int_param(q, "hours", 24, 1, 24 * 30)
+        pod_id = _str_param(q, "pod_id")
+        with self.store.conn() as c:
+            if pod_id is None:
+                row = c.execute("SELECT pod_id FROM pods ORDER BY last_seen_ms DESC LIMIT 1").fetchone()
+                pod_id = row[0] if row else None
+            animals = []
+            if pod_id is not None:
+                since = now_ms() - hours * 3_600_000
+                animals = [{"species": sp, "count": n} for sp, n in c.execute(
+                    "SELECT species, COUNT(*) AS n FROM events WHERE pod_id = ? AND t_end_ms >= ? "
+                    "AND species != 'unknown' GROUP BY species ORDER BY n DESC, species", (pod_id, since))]
+        zone = density.params.zone_info(density.params.zone_of(pod_id or ""))
+        return {
+            "_note": "From the ground API. animals = visit events in the last `hours`; "
+                     "biome = zone setting in ground/params.py; weather = placeholder.",
+            "pod_id": pod_id or "no-pod-yet",
+            "zone_id": zone["zone_id"],
+            "hours": hours,
+            "biome": zone.get("biome", "savanna"),
+            "biome_source": "zone setting",
+            "weather": {"condition": "clear", "source": "placeholder (no weather feed yet)"},
+            "animals": animals,
         }
 
     def get_zones(self, environ: dict, q: dict) -> dict:

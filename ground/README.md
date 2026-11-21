@@ -130,6 +130,28 @@ Each percentile array has one value per year (11 values for years 0–10). `p_be
 
 `intervention` is one of `patrols`, `habitat`, `more_pods`. Rows are in the order the greedy allocator picked them, best value per $1,000 first. The slider stays fast because the slow part (rerunning the simulation per option) is cached. Changing `budget` only reruns the greedy pick, so expect well under 100 ms per call. Debounce the slider anyway (about 200 ms).
 
+### `GET /api/scene?pod_id=&hours=24` (built, for agent-4's habitat view)
+
+This serves the scene JSON that `ground/dashboard/sim` already reads, so the habitat view runs on live data:
+
+```
+python -m ground.api                                   # :8000
+python -m http.server 8080 --directory ground/dashboard/sim
+# open http://127.0.0.1:8080/?scene=http://127.0.0.1:8000/api/scene
+```
+
+```json
+{ "pod_id": "pod-01", "zone_id": "zone-a", "hours": 24,
+  "biome": "savanna", "biome_source": "zone setting",
+  "weather": { "condition": "clear", "source": "placeholder (no weather feed yet)" },
+  "animals": [ { "species": "bird", "count": 13 }, { "species": "zebra", "count": 7 } ] }
+```
+
+- `animals` holds real visit counts for that Pod over the last `hours`, most-seen first. `unknown` is left out, and `teddy_bear` is kept because the plush demo is meant to show it.
+- `pod_id` defaults to the Pod that reported most recently.
+- `biome` comes from the zone's setting in `ground/params.py`.
+- `weather` is an honest placeholder: no one owns a weather feed yet. With no `hour`, the view uses the viewer's clock.
+
 ### `GET /api/zones`
 
 ```json
