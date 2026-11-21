@@ -1,0 +1,4 @@
+# Keep LF endings so scripts and patches work on the Pi even when checked out on Windows.
+*.sh    text eol=lf
+*.patch text eol=lf
+*.cmake text eol=lf
