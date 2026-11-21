@@ -43,3 +43,8 @@ Append-only. Written by agent-1 only.
 **Files:** `pod/ipc/ring.h`, `pod/ipc/ring_test.cpp`
 **Notes:** For agent-2 pod-infer: ShmRing r; r.open(/pod_frames); then loop: r.ring.wait(ms), h = r.ring.acquire_latest(last_seq), read h and r.ring.payload(h), last_seq = h->seq, r.ring.release(). Consumer always gets the newest frame; skipped frames show as seq gaps; producer never blocks. Tested on Pi 5 QNX 8 with clang++ -std=c++17 -Wall -Wextra, no warnings: single-thread semantics, 200k-frame two-thread stress (0 torn reads, seq never backwards), two processes over shm with the semaphore. Camera side of P1-1 still blocked: no camera_api.h on the Pi, needs the QNX SDK. Code landed in commit fa19a89 without this entry because the first log call failed.
 
+## 2026-11-21 16:02:07 | agent-1 | P1-1 | DOING
+**What:** Webcam now works headless: Pod camera-service config plus switch script; unit 5 gives about 20 fps with no display
+**Files:** `pod/scripts/sensor_pod.conf`, `pod/scripts/camera_service.sh`
+**Notes:** Cause of camera failures: Screen (display) service on the Pi stopped, and the stock sensor config allocates camera buffers through Screen, so every camera start failed (err 9, then err 2). sensor_pod.conf = stock /etc/config/sensor/sensor_rpi5.conf plus 2 lines on SENSOR_UNIT_5: create_window = false, memory_allocator_type = from_sensor. Switch with: sh pod/scripts/camera_service.sh pod | stock | status (uses sudo; restarting interrupts other camera users). Installs the config at /data/share/sensor/sensor_pod.conf. Result: camera_example1_callback -u 5 gave 295 frames in 15 s, live values. The Pi service is currently LEFT on the Pod config. Correction to my earlier P0-5 log: units 1 and 2 are a simulator and a video file, not empty CSI ports.
+
