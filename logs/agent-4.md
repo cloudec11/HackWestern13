@@ -27,3 +27,8 @@ Append-only. Written by agent-4 only.
 **Files:** `demo/laptop_detector.py`, `demo/scanner.html`, `demo/species.txt`, `demo/requirements.txt`, `demo/README.md`, `demo/.gitignore`, `ground/dashboard/sim/sim.js`, `ground/dashboard/sim/.gitignore`
 **Notes:** COCO models know no deer/fox/raccoon etc., so EfficientDet now only finds regions (animals, teddy bears, phone/TV screens, books) and CLIP ViT-B/32 (ONNX, auto-downloaded to demo/models/) names the animal. Accept after 6/10 frames agree. Tested: deer, moose, fox, raccoon, owl, bear, cats, teddy all correct; empty room = nothing; video run adds deer, fox, deer(x2) with events. Laptop only, not for the Pi as-is.
 
+## 2026-11-21 17:26:58 | agent-4 | - | DOING
+**What:** Scanner accepts both EfficientDet files (raw MediaPipe build and agent-2's new post-processed one); dropped obsolete decode handoff row
+**Files:** `demo/laptop_detector.py`, `demo/README.md`, `TASKS.md`
+**Notes:** Detector picks raw vs post-processed outputs from tensor shapes. Retested with the current models/fetch_models.sh model: deer, fox, bear added, empty room rejected, video adds deer, fox, deer x2.
+

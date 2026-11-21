@@ -64,12 +64,6 @@ Then open:
 
 Person is removed from the detector output first, and CLIP's "person/face/hand" answers are never accepted. Only cut-outs of accepted animals are saved, in `ground/dashboard/sim/captures/` (git-ignored). Full frames are never saved; the camera page is streamed from memory and only reachable from this laptop.
 
-### Note for pod-infer (agent-2)
+### Model files
 
-The MediaPipe `efficientdet_lite0.tflite` has **no built-in post-processing**. It outputs 19,206 raw boxes (`StatefulPartitionedCall:0`, ty/tx/th/tw) and sigmoid class scores (`StatefulPartitionedCall:1`, 90 classes, same indices as `labels.csv`). Decoding that matches SSD MobileNet's boxes:
-
-- anchors: levels 3–7 (strides 8–128), feature map `ceil(320/stride)`, centre `(i+0.5)/fs`; per cell 3 octaves `2^(o/3)` × 3 aspects `(1,1) (1.4,0.7) (0.7,1.4)` (x,y), size `3.0 * stride * octave / 320` (anchor scale **3**, not 4)
-- order: level, then row, then column, then octave, then aspect
-- `yc = ty*ha + ya`, `xc = tx*wa + xa`, `h = exp(th)*ha`, `w = exp(tw)*wa`, then per-class NMS (IoU 0.5)
-
-See `efficientdet_anchors()` and `Detector._efficientdet()` in `laptop_detector.py`. SSD MobileNet does this inside the model.
+The scanner works with either EfficientDet file: the post-processed one `models/fetch_models.sh` downloads now, or the older MediaPipe build that outputs raw boxes (it decodes those itself, anchor scale 3).

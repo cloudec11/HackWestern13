@@ -123,22 +123,32 @@ class Detector:
         self.it.allocate_tensors()
         inp = self.it.get_input_details()[0]
         self.input_index, self.h, self.w = inp["index"], int(inp["shape"][1]), int(inp["shape"][2])
-        self.outputs = {o["name"]: o["index"] for o in self.it.get_output_details()}
-        if kind == "efficientdet":
+        outs = self.it.get_output_details()
+        # Two kinds of model file: raw boxes + class scores (needs decoding here), or
+        # post-processed boxes/classes/scores/count (SSD MobileNet, TF task-library EfficientDet).
+        raw = [o for o in outs if len(o["shape"]) == 3 and o["shape"][-1] > 4]
+        if raw:
+            self.format = "raw"
+            self.scores_index = raw[0]["index"]
+            self.boxes_index = next(o["index"] for o in outs if len(o["shape"]) == 3 and o["shape"][-1] == 4)
             self.anchors = efficientdet_anchors(self.w)
-            n = self.it.get_output_details()[0]["shape"][-1]
+            n = raw[0]["shape"][-1]
             self.allowed = np.zeros(n, np.float32)
             self.allowed[[i for i in self.names if i < n]] = 1.0
+        else:
+            self.format = "post"
+            self.boxes_index = next(o["index"] for o in outs if len(o["shape"]) == 3)
+            self.pair = [o["index"] for o in outs if len(o["shape"]) == 2]   # classes and scores, order varies
 
     def __call__(self, frame_bgr):
         rgb = cv2.cvtColor(cv2.resize(frame_bgr, (self.w, self.h)), cv2.COLOR_BGR2RGB)
         self.it.set_tensor(self.input_index, rgb[None].astype(np.uint8))
         self.it.invoke()
-        return self._efficientdet() if self.kind == "efficientdet" else self._ssd()
+        return self._raw() if self.format == "raw" else self._post()
 
-    def _efficientdet(self):
-        scores = self.it.get_tensor(self.outputs["StatefulPartitionedCall:1"])[0] * self.allowed  # person -> 0
-        raw = self.it.get_tensor(self.outputs["StatefulPartitionedCall:0"])[0]
+    def _raw(self):
+        scores = self.it.get_tensor(self.scores_index)[0] * self.allowed  # person -> 0
+        raw = self.it.get_tensor(self.boxes_index)[0]
         cls = scores.argmax(1)
         conf = scores[np.arange(len(cls)), cls]
         keep = conf >= self.threshold
@@ -151,10 +161,10 @@ class Detector:
         keep_all = nms(boxes, conf)                              # class-agnostic: one box per thing
         return sorted(((self.names[int(cls[j])], float(conf[j]), tuple(boxes[j])) for j in keep_all), key=lambda d: -d[1])
 
-    def _ssd(self):
-        boxes = self.it.get_tensor(self.outputs["TFLite_Detection_PostProcess"])[0]
-        cls = self.it.get_tensor(self.outputs["TFLite_Detection_PostProcess:1"])[0]
-        conf = self.it.get_tensor(self.outputs["TFLite_Detection_PostProcess:2"])[0]
+    def _post(self):
+        boxes = self.it.get_tensor(self.boxes_index)[0]
+        a, b = (self.it.get_tensor(i)[0] for i in self.pair)
+        cls, conf = (a, b) if np.all(a == np.round(a)) and not np.all(b == np.round(b)) else (b, a)
         return [(self.names[int(c)], float(s), tuple(np.clip(b, 0, 1)))
                 for b, c, s in zip(boxes, cls, conf) if s >= self.threshold and int(c) in self.names]
 
