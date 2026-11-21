@@ -23,6 +23,49 @@
   #dev select, #dev input[type=range] { width: 110px; }
   #error { position: fixed; top: 16px; right: 16px; background: #7a2a1f; padding: 8px 12px; border-radius: 8px; font-size: 12px; }
   @media (max-width: 520px) { #dev { left: 16px; right: 16px; bottom: 40px; } #hint { bottom: 8px; } }
+
+  /* ---- charts panel (charts.js) ---- */
+  #charts-toggle { position: fixed; top: 16px; right: 16px; z-index: 5; font: 600 14px system-ui, sans-serif; color: #f0efec;
+    background: rgba(12,16,22,0.8); border: 1px solid rgba(255,255,255,0.18); border-radius: 10px; padding: 9px 14px; cursor: pointer; }
+  #charts-toggle:hover { background: rgba(30,38,50,0.9); }
+  #charts { position: fixed; left: 0; right: 0; bottom: 0; height: min(66vh, 760px); z-index: 4; overflow-y: auto;
+    background: #161c24; border-top: 1px solid #2a3340; color: #f0efec; padding: 16px 16px 24px; box-shadow: 0 -10px 30px rgba(0,0,0,0.35); }
+  #charts .top { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-bottom: 12px; }
+  #charts h2 { margin: 0; font-size: 17px; }
+  #charts .src { color: #9aa8b5; font-size: 12px; }
+  #charts .spacer { flex: 1; }
+  #ch-ranges { display: flex; gap: 4px; flex-wrap: wrap; }
+  #charts button { font: inherit; font-size: 13px; color: #c3c2b7; background: #1e2631; border: 1px solid #2a3340; border-radius: 8px; padding: 5px 10px; cursor: pointer; }
+  #charts button[aria-pressed="true"] { color: #f0efec; background: #2a3a50; border-color: #3987e5; }
+  #charts label.tbl { font-size: 13px; color: #c3c2b7; display: flex; gap: 6px; align-items: center; }
+  #ch-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 14px; }
+  #ch-stats .stat { background: #1b222c; border: 1px solid #2a3340; border-radius: 10px; padding: 10px 12px; }
+  #ch-stats .k { font-size: 12px; color: #9aa8b5; }
+  #ch-stats .v { font-size: 20px; font-weight: 650; margin-top: 2px; text-transform: capitalize; }
+  #charts .chart { background: #1b222c; border: 1px solid #2a3340; border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; }
+  #charts .chart h3 { margin: 0 0 2px; font-size: 14px; }
+  #charts .chart .sub { margin: 0 0 8px; font-size: 12px; color: #9aa8b5; }
+  #charts .row2 { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 12px; }
+  @media (max-width: 760px) { #charts .row2 { grid-template-columns: 1fr; } }
+  #ch-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: #c3c2b7; margin-bottom: 6px; text-transform: capitalize; }
+  #charts .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+  #charts svg { display: block; overflow: visible; }
+  #charts svg text { font: 11px system-ui, sans-serif; }
+  #charts .grid { stroke: #2a3340; stroke-width: 1; }
+  #charts .axis { fill: #9aa8b5; text-transform: capitalize; }
+  #charts .endlabel { fill: #c3c2b7; font-size: 12px; text-transform: capitalize; }
+  #charts .val { fill: #c3c2b7; }
+  #charts .cross { stroke: #c3c2b7; stroke-width: 1; stroke-dasharray: 3 3; }
+  #charts .empty { color: #9aa8b5; font-size: 13px; padding: 24px 0; text-align: center; }
+  #ch-table { margin-top: 10px; max-height: 220px; overflow: auto; }
+  #ch-table table { border-collapse: collapse; font-size: 12px; width: 100%; }
+  #ch-table th, #ch-table td { padding: 4px 8px; border-bottom: 1px solid #2a3340; text-align: right; text-transform: capitalize; }
+  #ch-table th:first-child, #ch-table td:first-child { text-align: left; }
+  #ch-tip { position: absolute; z-index: 10; pointer-events: none; background: #0e1217; border: 1px solid #3a4656; border-radius: 8px;
+    padding: 8px 10px; font-size: 12px; min-width: 140px; box-shadow: 0 6px 18px rgba(0,0,0,0.4); }
+  #ch-tip .th { font-weight: 600; margin-bottom: 4px; text-transform: capitalize; }
+  #ch-tip .row { display: flex; align-items: center; gap: 4px; text-transform: capitalize; color: #c3c2b7; }
+  #ch-tip .row b { margin-left: auto; padding-left: 12px; color: #f0efec; }
 </style>
 </head>
 <body>
@@ -65,6 +108,40 @@
 
 <div id="error" hidden></div>
 
+<button id="charts-toggle" aria-expanded="false" aria-controls="charts">Charts</button>
+<section id="charts" hidden aria-label="Animal appearance charts">
+  <div class="top">
+    <h2>Animals in this area</h2>
+    <span class="src" id="ch-source"></span>
+    <span class="spacer"></span>
+    <div id="ch-ranges" role="group" aria-label="Time range"></div>
+    <label class="tbl"><input type="checkbox" id="ch-table-toggle"> Table</label>
+    <button id="ch-close" aria-label="Close charts">Close</button>
+  </div>
+  <div id="ch-stats"></div>
+  <div class="chart">
+    <h3>Appearances over time</h3>
+    <p class="sub">How many times each animal was seen in each time period. Hover for exact numbers.</p>
+    <div id="ch-legend"></div>
+    <div id="ch-line"></div>
+    <div id="ch-table" hidden></div>
+  </div>
+  <div class="row2">
+    <div class="chart">
+      <h3>Time of day</h3>
+      <p class="sub">When each animal tends to show up (darker = rarely, brighter = often).</p>
+      <div id="ch-hours"></div>
+    </div>
+    <div class="chart">
+      <h3>Most seen</h3>
+      <p class="sub">Total appearances in the selected range.</p>
+      <div id="ch-bars"></div>
+    </div>
+  </div>
+  <div id="ch-tip" hidden></div>
+</section>
+
 <script src="sim.js"></script>
+<script src="charts.js"></script>
 </body>
 </html>

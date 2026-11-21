@@ -12,7 +12,8 @@
 
   // ------------------------------------------------------------ config
   var params = new URLSearchParams(location.search);
-  var SCENE_URL = params.get('scene') || './fake_scene.json';
+  var API = (params.get('api') || '').replace(/\/$/, '');
+  var SCENE_URL = params.get('scene') || (API ? API + '/api/scene' : './fake_scene.json');
   var REFRESH_MS = params.has('refresh') ? Math.max(1, Number(params.get('refresh'))) * 1000 : 30000;
   var EYE = 1.6;                 // viewer eye height, metres
   var FOG_LEVELS = 8;            // pre-tinted copies per picture

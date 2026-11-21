@@ -355,15 +355,32 @@ class Scene:
         self.args, self.counts, self.images = args, {}, {}
         self.captures = args.scene_out.parent / "captures"
         self.captures.mkdir(exist_ok=True)
+        # Every accepted animal with its time, kept across runs, for the habitat view's charts.
+        self.history_path = args.scene_out.parent / "live_history.json"
+        self.history = []
+        if self.history_path.exists() and not args.clear_history:
+            try:
+                self.history = json.loads(self.history_path.read_text())
+            except ValueError:
+                self.history = []
+        self._write_json(self.history_path, self.history)
 
     def add(self, species, crop):
         self.counts[species] = self.counts.get(species, 0) + 1
-        name = f"{species}_{time.strftime('%H%M%S')}.png"
+        name = f"{species}_{time.strftime('%Y%m%d_%H%M%S')}.png"
         cv2.imwrite(str(self.captures / name), cutout(crop))
         if not self.args.no_photos_in_sim:
             self.images[species] = f"captures/{name}"
+        self.history.append({"species": species, "t_ms": int(time.time() * 1000), "image": f"captures/{name}"})
+        self._write_json(self.history_path, self.history)
         self.write()
         return f"captures/{name}"
+
+    @staticmethod
+    def _write_json(path, obj):
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(obj, indent=1))
+        os.replace(tmp, path)                                    # atomic: the page never reads half a file
 
     def reset(self):
         self.counts.clear(); self.images.clear(); self.write()
@@ -380,9 +397,7 @@ class Scene:
             "weather": {"condition": self.args.weather, "source": "laptop test (--weather)"},
             "animals": animals, "updated_ms": int(time.time() * 1000),
         }
-        tmp = self.args.scene_out.with_suffix(".tmp")
-        tmp.write_text(json.dumps(scene, indent=2))
-        os.replace(tmp, self.args.scene_out)                     # atomic: the page never reads half a file
+        self._write_json(self.args.scene_out, scene)
 
 
 # ---------------------------------------------------------------- drawing
@@ -502,6 +517,7 @@ def main():
     p.add_argument("--pod-id", default="laptop")
     p.add_argument("--scene-out", type=Path, default=SIM_DIR / "live_scene.json")
     p.add_argument("--no-photos-in-sim", action="store_true", help="use cartoon placeholders instead of the cut-outs")
+    p.add_argument("--clear-history", action="store_true", help="start the appearance history (charts) from empty")
     p.add_argument("--preview-port", type=int, default=8081)
     p.add_argument("--max-frames", type=int, default=0, help="stop after N frames (0 = run forever)")
     args = p.parse_args()

@@ -23,8 +23,22 @@ URL options, for testing or the demo:
 | `hour` | `?hour=19.5` | time of day (sunset, night) |
 | `scene` | `?scene=/api/scene` | where to load the scene JSON from |
 | `scale` | `?scale=0.5` | fixed render resolution (lower = faster on weak devices) |
+| `api` | `?api=http://localhost:8000` | use agent-3's ground API for the scene (`/api/scene`) and chart history (`/api/events`) |
+| `charts` | `?charts=1` | open the charts panel on load |
+| `refresh` | `?refresh=2` | seconds between data reloads (default 30) |
 
 The panel in the bottom right does the same live. It is temporary until the nav bar exists.
+
+## Charts panel
+
+The **Charts** button (top right) opens a panel about the animals seen in this area:
+
+- **Appearances over time:** date/time on the x axis, number of appearances per time period on the y axis, one line per species (top 4 + "other"). Hover for exact numbers; tick **Table** for the same data as a table.
+- **Time of day:** when each species tends to show up (hour × species).
+- **Most seen:** totals for the selected range.
+- Headline numbers: appearances, species, most seen, last seen.
+
+Ranges: last hour, 24 h, 7 days, 30 days, all. History comes from `?history=URL`, else the ground API (`?api=`), else `live_history.json` from the laptop scanner (with `?scene=live_scene.json`), else **generated fake history**, labelled as fake in the panel. Plain JS + SVG, no libraries; colours from a colour-blind-checked palette.
 
 ## On the QNX Pi
 

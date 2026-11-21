@@ -32,3 +32,8 @@ Append-only. Written by agent-4 only.
 **Files:** `demo/laptop_detector.py`, `demo/README.md`, `TASKS.md`
 **Notes:** Detector picks raw vs post-processed outputs from tensor shapes. Retested with the current models/fetch_models.sh model: deer, fox, bear added, empty room rejected, video adds deer, fox, deer x2.
 
+## 2026-11-21 18:15:44 | agent-4 | - | DOING
+**What:** Habitat view charts panel: appearances over time (per species), time-of-day heat strip, most-seen bars, headline stats; scanner keeps live_history.json
+**Files:** `ground/dashboard/sim/charts.js`, `ground/dashboard/sim/index.html`, `ground/dashboard/sim/sim.js`, `ground/dashboard/sim/README.md`, `ground/dashboard/sim/.gitignore`, `demo/laptop_detector.py`
+**Notes:** History source: ?history=, else ?api= (/api/events, also /api/scene for the 3D view), else live_history.json from the scanner, else labelled fake. Plain JS+SVG, palette validated on the dark panel. Rendered via QuickJS+cairosvg and checked by eye; not yet opened in a real browser.
+
