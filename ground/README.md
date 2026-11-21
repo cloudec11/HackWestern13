@@ -163,20 +163,47 @@ The model was no better than "nothing changes", and its 90% band was far too nar
 - **Present it as:** the forecast honestly shows *how uncertain* the future is. It doesn't *predict* the path.
 - **Caveats:** this is one population (moose), and the held-out set is small and overlapping (80 comparisons from about 18 start years).
 
-### `GET /api/allocate?budget=50000`
+### `GET /api/allocate?budget=50000&threshold=50` (built, P3-4)
 
 ```json
 {
-  "budget": 50000, "spent": 48000, "unallocated": 2000,
+  "budget": 50000, "spent": 50000, "unallocated": 0,
+  "species_at_risk_before": 4.275, "species_at_risk_after": 3.596,
   "rows": [
-    { "zone_id": "zone-b", "species": "elephant", "intervention": "patrols",
-      "cost": 12000, "risk_before": 0.18, "risk_after": 0.07, "risk_reduction_per_1k": 0.0092 }
+    { "step": 1, "zone_id": "zone-c", "intervention": "patrols", "label": "Anti-poaching patrols",
+      "cost": 12000, "risk_before": 2.59, "risk_after": 2.31, "risk_reduction_per_1k": 0.02333,
+      "by_species": { "elephant": { "p_below_before": 0.98, "p_below_after": 0.92 }, "...": {} } }
   ],
-  "illustrative": true
+  "options": [ { "zone_id": "zone-c", "intervention": "patrols", "cost": 12000,
+                 "risk_before": 2.59, "risk_after": 2.31, "risk_reduction_per_1k": 0.02333,
+                 "band_width_change": -0.02 } ],
+  "actions": { "patrols": { "label": "Anti-poaching patrols", "cost": 12000, "source": "illustrative" } },
+  "threshold": 50, "cached": true, "illustrative": true, "note": "..."
 }
 ```
 
-`intervention` is one of `patrols`, `habitat`, `more_pods`. Rows are in the order the greedy allocator picked them, best value per $1,000 first. The slider stays fast because the slow part (rerunning the simulation per option) is cached. Changing `budget` only reruns the greedy pick, so expect well under 100 ms per call. Debounce the slider anyway (about 200 ms).
+**Changes from the planned shape (agent-4):**
+- **Rows are per zone, not per species.** A patrol protects every species in its zone, so one row = one zone and one action, with the species detail in `by_species`.
+- **`risk_before` / `risk_after` are the zone's expected number of species falling below the threshold** in 10 years: the sum of their probabilities. That can be above 1.
+- **New:** `options` (every single action on its own, for a "why" view), `actions` (costs and labels), `step`, and the totals `species_at_risk_before/after`.
+
+As built (`ground/allocate.py`, costs and effects in `params.INTERVENTIONS`, all **illustrative**):
+
+| Action | Cost | Effect on the forecast |
+|---|---|---|
+| `patrols` | $12,000 | the zone's loss rate × 0.5 |
+| `habitat` | $20,000 | carrying capacity × 1.3 |
+| `more_pods` | $6,000 | starting-count interval shrinks (×0.58 on a log scale: 3 cameras instead of 1) |
+
+- **Scenarios:** every combination of actions per zone (8 scenarios) is forecast with shared random seeds, so differences come from the action, not from luck.
+- **Greedy pick:** it buys the best risk cut per $1,000 given what the zone already has, and each action at most once per zone.
+- **Noise floor:** it skips cuts smaller than `MIN_GAIN = 0.01` expected species, which is below the Monte Carlo noise.
+- **Speed:** the scenario build takes about 2.3 s on the laptop for 3 zones × 14 days (not timed on the Pi). It's cached until new events or heartbeats arrive, so **slider calls take 9–29 ms**. Debounce the slider anyway (about 200 ms).
+- **Example result on fake data, $50k:** patrols in zone-c, then patrols in zone-a, then habitat in zone-a, then more Pods in zone-a. Species at risk fell from 4.28 to 3.60.
+
+**Honest limits:**
+- **More Pods hardly move 10-year risk** (the band narrows by under 1%). After calibration, most uncertainty comes from year-to-year swings, not from the starting count. On a small budget, though, more Pods can still be the only affordable action that clears the 0.01 floor: zone-b's gain is 0.015, so $10k buys them. The real value of more cameras is better information for future decisions, which this risk score doesn't capture.
+- **Treat this as a comparison of options, not a promise.** It inherits the forecast's limits (see the backtest above).
 
 ### `GET /api/scene?pod_id=&hours=24` (built, for agent-4's habitat view)
 

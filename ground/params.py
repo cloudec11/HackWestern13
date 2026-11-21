@@ -89,6 +89,27 @@ FORECAST_RUNS = 1000
 QUASI_EXTINCTION = 50     # "at risk" if the population falls below this within the forecast
 GROWTH_SOURCE = "illustrative"
 
+# ---- Budget allocation (ground/allocate.py) ----
+# Each action is bought once per zone and helps every species in that zone.
+# Costs and effects are ILLUSTRATIVE placeholders until conservation partners
+# supply real ones. Effects act on the forecast's inputs:
+#   loss_mult  multiplies the zone's yearly loss rate (patrols cut poaching)
+#   k_mult     multiplies carrying capacity (restored habitat supports more animals)
+#   ci_shrink  shrinks the starting-population interval on a log scale. Two more
+#              Pods = 3 cameras instead of 1, and error falls ~1/sqrt(3), about 0.58
+INTERVENTIONS = {
+    "patrols":   {"label": "Anti-poaching patrols", "cost": 12_000, "loss_mult": 0.5},
+    "habitat":   {"label": "Habitat restoration",   "cost": 20_000, "k_mult": 1.3},
+    "more_pods": {"label": "Two more Pods",          "cost": 6_000,  "ci_shrink": 0.58},
+}
+INTERVENTION_SOURCE = "illustrative"
+# Don't buy an action whose risk cut is smaller than this (expected species). With
+# 1000 runs, a single species' p_below has a Monte Carlo error of roughly 0.01-0.016,
+# so smaller "gains" are mostly noise. Example: more Pods barely move 10-year
+# risk, because year-to-year swings dominate the uncertainty.
+MIN_GAIN = 0.01
+DEFAULT_BUDGET = 50_000
+
 # ---- Density method settings ----
 MIN_VISITS = 5            # fewer visits than this -> "insufficient_data"
 OUTAGE_GAP_MIN = 30       # a gap with no heartbeat or event longer than this = camera off

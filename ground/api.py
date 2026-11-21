@@ -21,6 +21,7 @@ Endpoints:
     GET  /api/density    ?zone_id=&species=   Random Encounter Model estimates (ground/density.py)
     GET  /api/scene      ?pod_id=&hours=24    scene JSON for the habitat view (ground/dashboard/sim)
     GET  /api/simulation ?zone_id=&species=&threshold=50   10-year forecast fan chart (ground/simulate.py)
+    GET  /api/allocate   ?budget=50000&threshold=50       budget split (ground/allocate.py), cached for the slider
     GET  /health         liveness check
 
 Errors are JSON: {"detail": [{"path": ..., "error": ...}, ...]} with HTTP 422
@@ -35,6 +36,7 @@ import json
 import os
 import sqlite3
 import sys
+import threading
 import time
 import traceback
 from contextlib import contextmanager
@@ -44,7 +46,7 @@ from typing import Any, Callable, Iterator
 from urllib.parse import parse_qs
 from wsgiref.simple_server import WSGIRequestHandler, WSGIServer, make_server
 
-from ground import density, simulate
+from ground import allocate, density, params, simulate
 from ground.schema_check import load_validators
 
 HERE = Path(__file__).resolve().parent
@@ -267,7 +269,32 @@ class App:
             ("GET", "/api/density"): self.get_density,
             ("GET", "/api/scene"): self.get_scene,
             ("GET", "/api/simulation"): self.get_simulation,
+            ("GET", "/api/allocate"): self.get_allocate,
         }
+        self._alloc_cache: tuple | None = None   # (data version, threshold, scenario table)
+        self._alloc_lock = threading.Lock()
+
+    def _data_version(self, c) -> tuple:
+        """Changes whenever events or heartbeats arrive, so the cached scenarios stay current."""
+        return (c.execute("SELECT COUNT(*), MAX(received_ms) FROM events").fetchone()[:]
+                + c.execute("SELECT COUNT(*), MAX(received_ms) FROM heartbeats").fetchone()[:])
+
+    def get_allocate(self, environ: dict, q: dict) -> dict:
+        budget = _int_param(q, "budget", params.DEFAULT_BUDGET, 0, 100_000_000)
+        threshold = _int_param(q, "threshold", None, 1, 100_000)
+        with self._alloc_lock:             # one scenario build at a time; slider calls then hit the cache
+            with self.store.conn() as c:
+                version = self._data_version(c)
+                cached = self._alloc_cache
+                if cached and cached[0] == version and cached[1] == threshold:
+                    table, hit = cached[2], True
+                else:
+                    table, hit = allocate.scenario_table(density.density_results(c), threshold), False
+                    self._alloc_cache = (version, threshold, table)
+        out = allocate.allocate(table, budget)
+        out.update(threshold=threshold or params.QUASI_EXTINCTION, options=allocate.options(table),
+                   cached=hit, generated_ms=now_ms())
+        return out
 
     def get_simulation(self, environ: dict, q: dict) -> dict:
         threshold = _int_param(q, "threshold", None, 1, 100_000)

@@ -81,3 +81,8 @@ Append-only. Written by agent-3 only.
 ## 2026-11-21 17:54:26 | agent-3 | P3-4 | DOING
 **What:** Claiming P3-4: budget allocator (ground/allocate.py) + /api/allocate
 
+## 2026-11-21 17:59:37 | agent-3 | P3-4 | REVIEW
+**What:** Budget allocator: ground/allocate.py + GET /api/allocate (greedy risk cut per $1k over cached forecast scenarios)
+**Files:** `ground/allocate.py`, `ground/params.py`, `ground/api.py`, `ground/tests/test_allocate.py`, `ground/README.md`, `TASKS.md`
+**Notes:** Actions (illustrative, params.INTERVENTIONS): patrols $12k loss x0.5; habitat $20k K x1.3; more_pods $6k n0 interval x0.58 (log). Every action combo per zone forecast with common random numbers (8 scenarios/zone); zone risk = expected species below threshold in 10 y. Greedy: best risk cut per $1k given what the zone has, once per action per zone, skip gains < MIN_GAIN 0.01 (Monte Carlo noise). API caches scenarios keyed on events+heartbeats count/max received_ms + threshold: first call 2.3 s, slider 9-29 ms (laptop; Pi not timed, offline). Fake 14-day data, $50k: zone-c patrols, zone-a patrols, zone-a habitat, zone-a more Pods; species at risk 4.28 -> 3.60. Limit, documented: more Pods barely change 10-y risk (band -<1%), yet zone-b's 0.015 gain clears the floor so $10k buys it; their real value is information, not captured. 89 tests pass. agent-4: see Blockers row (per-zone rows).
+
