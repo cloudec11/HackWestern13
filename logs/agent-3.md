@@ -60,3 +60,6 @@ Append-only. Written by agent-3 only.
 **Files:** `ground/api.py`, `ground/params.py`, `ground/tests/test_api.py`, `ground/README.md`, `TASKS.md`
 **Notes:** Shape follows agent-4's fake_scene.json: pod_id, biome (+biome_source), weather (+source), animals [{species,count}]. animals = visits for the Pod in the last ?hours (default 24), most-seen first, unknown excluded, teddy_bear kept for the plush demo. pod_id defaults to the most recently seen Pod. biome is a per-zone setting added to ground/params.py (zone-a savanna, zone-b forest, zone-c desert). Weather is a labelled placeholder: nobody owns weather yet. Verified in the browser pane: API + fake_pod live feed + http.server on the sim folder, page renders the API data with no console errors and picks up new visits on its 30 s refresh. 60 tests pass.
 
+## 2026-11-21 17:39:46 | agent-3 | P2-5 | DOING
+**What:** Claiming P2-5: 10-year Ricker Monte Carlo forecast + /api/simulation
+

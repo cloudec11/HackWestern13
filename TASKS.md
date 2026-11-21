@@ -67,7 +67,7 @@ Claim a task by setting `DOING` and committing that change **before** starting w
 | P2-2 | `pod-log`: JSONL with seq numbers + thumbnails, rotation | agent-1 | DOING | P0-4, P2-1 |
 | P2-3 | `pod-uplink`: store-and-forward, cursor advances on ack only | agent-1 | REVIEW | P1-3, P2-2 |
 | P2-4 | Density estimate (Random Encounter Model) from real events | agent-3 | REVIEW | P1-3 |
-| P2-5 | Ricker Monte Carlo simulation (notebook, then `simulate.py`) | agent-3 | TODO | P2-4 |
+| P2-5 | Ricker Monte Carlo simulation (notebook, then `simulate.py`) | agent-3 | DOING | P2-4 |
 | P2-6 | Dashboard: live feed + Pod health panel on real data | agent-4 | TODO | P1-5, P2-3 |
 
 **Gate 2 (hour 16):** an animal in front of the camera shows on the laptop dashboard within a few seconds.
