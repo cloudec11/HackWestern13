@@ -5,10 +5,12 @@
 set -e
 cd "$(dirname "$0")"
 
-# EfficientDet-Lite0, int8, 320x320 input (MediaPipe build, COCO classes).
+# EfficientDet-Lite0, uint8, 320x320 input, COCO classes. TFLite Task Library build: includes
+# the TFLite_Detection_PostProcess op (box decoding + NMS), which pod-infer expects.
+# (The MediaPipe build of the same model has no post-processing and does not work with pod-infer.)
 if [ ! -f efficientdet_lite0.tflite ]; then
     curl -fsSL -o efficientdet_lite0.tflite \
-        https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/int8/1/efficientdet_lite0.tflite
+        https://storage.googleapis.com/download.tensorflow.org/models/tflite/task_library/object_detection/android/lite-model_efficientdet_lite0_detection_metadata_1.tflite
 fi
 
 # SSD MobileNet v1, uint8 quantised, 300x300 input (TFLite sample model, COCO classes).
