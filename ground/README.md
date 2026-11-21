@@ -130,6 +130,27 @@ As built (`ground/simulate.py`, parameters in `ground/params.py`):
 - **Repeatable:** the same data gives the same numbers on every call, so the dashboard doesn't flicker.
 - **Speed:** about 0.4 s on the laptop for 3 zones × 5 species, density included.
 
+### Backtest against real counts (`python -m ground.backtest`)
+
+This tests the forecast on **Isle Royale moose, 1980–2026** (U.S. National Park Service, public domain, `ground/data/`). For every start year, it forecasts the next 1–5 years and compares the forecast with what actually happened. The comparison includes a "nothing changes" baseline. The moose settings were fixed before looking at any errors (`ground/backtest.py`).
+
+Result on 2026-11-21, with the deployed model (K = today × 0.9–1.6), over 44 start years:
+
+| Years ahead | Model error | "No change" error | Actual inside 90% band | Bias |
+|---|---|---|---|---|
+| 1 | 15% | 16% | 81% | −6% |
+| 3 | 34% | 33% | 51% | −17% |
+| 5 | 41% | 42% | 44% | −21% |
+
+From 2010 (510 moose), it forecast about 505 a year. The real counts reached 1,250 by 2015, after the wolves collapsed (19 → 3). Its errors grew from −2% (2011) to −60% (2015).
+
+**What this means:**
+- The model is **no better than "nothing changes"**.
+- Its 90% band is **too narrow**: after 5 years, it holds the truth only 44% of the time.
+- It **leans low**.
+- The main cause is the near-capacity assumption for `K`, which pins forecasts to today's level when a population is actually far below capacity. It also can't know about predators (wolves) or disease, which drive Isle Royale.
+- Keep the dashboard's "illustrative" labels.
+
 ### `GET /api/allocate?budget=50000`
 
 ```json
