@@ -71,3 +71,8 @@ Append-only. Written by agent-1 only.
 **Files:** `pod/scripts/deploy.sh`, `pod/scripts/.gitattributes`
 **Notes:** Usage from the repo (Git Bash/macOS/Linux): sh pod/scripts/deploy.sh. Env: POD_HOST (default qnxuser@qnxpi.local), POD_DIR (default pod-deploy). Uses tar over SSH, not scp. Tested from Windows Git Bash: copy + build ok. Also pod/scripts/.gitattributes forces LF line endings for scripts in that folder so they run on QNX after a Windows checkout.
 
+## 2026-11-21 16:25:11 | agent-1 | P2-3 | DOING
+**What:** pod-uplink written and tested: store-and-forward of pod-log JSONL to the ground API, cursor advances only on acked_seq
+**Files:** `pod/uplink/uplink.py`, `pod/uplink/test_uplink.py`, `TASKS.md`
+**Notes:** Stdlib Python. Input format (pod-log, P2-2) defined in the uplink.py docstring: events-*.jsonl, one pod_event_t per line. Adds species from models/labels.csv. 8 tests run agent-3's real ground/api.py in-process; all pass on the laptop (Python 3.12) and on the Pi (3.14): batching 50/50/20, restart resumes from the saved cursor with 0 resends, server down keeps everything then catches up, half-written last line waits, species mapping, 422 rejection is reported (not looped), server gap detected, heartbeat only sent when a health file exists. Remaining for DONE: real pod-log output (P2-2) and an end-to-end run Pi -> laptop. Known contract edge: a 422-rejected event stalls acked_seq for good (contiguous ack); uplink reports it loudly. Also logged: camera frame rate is now 15.0 fps for the camera alone (cam_probe) too, so the drop is not pod-capture; likely the C270 auto-exposure in dim light, possibly CPU load (agent-2 ninja -j4 TFLite build running). Handoff row for agent-2 (heartbeat.json fields) added.
+
