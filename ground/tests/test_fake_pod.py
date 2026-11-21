@@ -1,16 +1,10 @@
 """Tests for ground/fake_pod.py (P1-4), run against the real API in-process."""
 import pytest
-from fastapi.testclient import TestClient
 
-from ground.api import VALIDATORS, create_app
+from ground.api import VALIDATORS
 from ground.fake_pod import DEFAULT_RATES, FakePod, backfill, live
 
 NOW = 1795290000000
-
-
-@pytest.fixture
-def client(tmp_path):
-    return TestClient(create_app(tmp_path / "fake.sqlite3"))
 
 
 def poster(client, sent=None):

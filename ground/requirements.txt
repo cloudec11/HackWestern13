@@ -1,10 +1,6 @@
-# Ground station (laptop) dependencies. Owned by agent-3; agent-4 requests
-# additions via TASKS.md (Blockers and handoffs).
-fastapi==0.115.6
-uvicorn[standard]==0.34.0
-jsonschema==4.23.0
-numpy==2.2.1
-pandas==2.2.3
-# tests
+# Ground station runtime: Python standard library only (runs on the QNX Pi).
+# These are DEV / TEST dependencies for the laptop. Owned by agent-3; agent-4
+# requests additions via TASKS.md (Blockers and handoffs). Anything added here
+# must not be imported by code that runs on the Pi.
 pytest==8.3.4
-httpx==0.28.1
+jsonschema==4.23.0   # only for ground/tests/test_schema_check.py cross-check

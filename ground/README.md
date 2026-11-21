@@ -1,26 +1,21 @@
-# Ground station (laptop)
+# Ground station
 
-Python 3.11+. The contract is `shared/event_schema.json` v1.
-
-## Setup (once)
-
-```
-python -m venv ground/.venv
-ground/.venv/Scripts/python -m pip install -r ground/requirements.txt   # Windows
-# macOS/Linux: ground/.venv/bin/python -m pip install -r ground/requirements.txt
-```
+Runs on the laptop **or on the QNX Pi**, using the **Python standard library only** (3.10+, no pip packages). Checked on Python 3.12 (Windows) and Python 3.14 (QNX 8.0, Raspberry Pi 5). The contract is `shared/event_schema.json` v1.
 
 ## Run the ingest API (P1-3, agent-3)
 
-From the repo root:
+From the repo root, with any Python 3.10+:
 
 ```
-ground/.venv/Scripts/python -m uvicorn ground.api:app --host 0.0.0.0 --port 8000
+python -m ground.api                                   # 0.0.0.0:8000, db ground/db/pod.sqlite3
+python -m ground.api --port 8000 --db /data/pod.sqlite3 --quiet
 ```
 
-- The Pod uses `POD_GROUND_URL=http://<laptop-ip>:8000`. The laptop must allow inbound TCP 8000 in its firewall.
-- The data goes in `ground/db/pod.sqlite3` (git-ignored). Set `POD_DB=<path>` to use another file. Delete the file to start fresh.
-- Interactive API docs: http://localhost:8000/docs
+On the Pi, it's the same command, run from the repo checkout (`python3` there). The Pod's uploader then uses `POD_GROUND_URL=http://127.0.0.1:8000`. If the API runs on the laptop instead, use `http://<laptop-ip>:8000`, and the laptop must allow inbound TCP 8000 in its firewall.
+
+- The data goes in `ground/db/pod.sqlite3` (git-ignored). `--db` or `POD_DB=<path>` picks another file, and `POD_PORT` sets the port. Delete the file to start fresh.
+- Requests are validated against `shared/event_schema.json` by `ground/schema_check.py`, a small stdlib validator. It refuses to load a schema that uses a keyword it doesn't implement, so a contract change can't be silently ignored.
+- CORS is open, so a dashboard page from any origin can call it.
 
 | Endpoint | Body / params | Returns |
 |----------|---------------|---------|
@@ -30,7 +25,7 @@ ground/.venv/Scripts/python -m uvicorn ground.api:app --host 0.0.0.0 --port 8000
 | `GET /api/events?pod_id=&species=&since_ms=&limit=200` | — | raw visits, newest first |
 | `GET /health` | — | `{"ok": true}` |
 
-A malformed batch gets a 422 with a list of `{path, error}`, and nothing from that batch is stored. Resending events the server already has is harmless: they're counted as `duplicates`.
+Errors are JSON, `{"detail": [{"path": ..., "error": ...}]}`: 422 for bad input (nothing from that batch is stored), 404 for an unknown path, 405 for a wrong method, 413 for a body over 1 MB. Resending events the server already has is harmless: they're counted as `duplicates`.
 
 ## Fake Pod (P1-4, agent-3)
 
@@ -47,7 +42,8 @@ python -m ground.fake_pod --dry-run --duration 5            # print JSON, send n
 
 - Rerunning with the same pod id is fine. It asks the server how far it got and continues numbering from there.
 - The default URL is `http://127.0.0.1:8000`. On Windows, `localhost` adds about 2 s per request.
-- Class ids are placeholders until agent-2's label table lands in `models/`. Every number it produces is made up.
+- Class ids come from agent-2's `models/labels.csv`. Every number it produces is made up.
+- Also runs on the Pi: `python3 -m ground.fake_pod --url http://127.0.0.1:8000`.
 
 If you pulled a schema change in `ground/db/schema.sql`, delete `ground/db/pod.sqlite3` once so it is recreated.
 
@@ -137,8 +133,12 @@ Demo zones will be seeded with the fake Pods mapped to them (pod-01 → zone-a, 
 - The model stays two-parameter Ricker plus losses. No regression model, so ridge isn't needed.
 - Check: run density on `fake_pod --backfill-days 30` data, where the true visit rates are known, and confirm it recovers them. That will be a test in `ground/tests/`.
 
-## Tests
+## Tests (laptop)
+
+The tests need `pytest`, plus `jsonschema` for the validator cross-check. These are dev-only and listed in `ground/requirements.txt`:
 
 ```
+python -m venv ground/.venv
+ground/.venv/Scripts/python -m pip install -r ground/requirements.txt
 ground/.venv/Scripts/python -m pytest ground/tests -q
 ```

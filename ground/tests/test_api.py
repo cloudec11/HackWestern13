@@ -2,9 +2,6 @@
     ground/.venv/Scripts/python -m pytest ground/tests -q
 """
 import pytest
-from fastapi.testclient import TestClient
-
-from ground.api import create_app
 
 T0 = 1795283000000
 
@@ -26,11 +23,6 @@ def hb(seq=1, pod="pod-01", **kw):
          "disk_free_mb": 20000, "restarts": 0, "queue_depth": 0, "last_ack_seq": 0}
     h.update(kw)
     return h
-
-
-@pytest.fixture
-def client(tmp_path):
-    return TestClient(create_app(tmp_path / "test.sqlite3"))
 
 
 def post(client, body):
@@ -151,3 +143,40 @@ def test_non_json_object_rejected(client):
     assert client.post("/api/events", json=[1, 2]).status_code == 422
     assert client.post("/api/events", content=b"not json",
                        headers={"content-type": "application/json"}).status_code == 422
+
+
+def test_unknown_path_and_wrong_method(client):
+    r = client.get("/api/nope")
+    assert r.status_code == 404 and r.json()["detail"][0]["error"] == "no such endpoint"
+    assert client.get("/api/events/").status_code == 200          # trailing slash is fine
+    assert client.request("DELETE", "/api/events").status_code == 405
+    assert client.get("/api/heartbeat").status_code == 405
+
+
+def test_cors_headers_and_preflight(client):
+    assert client.get("/health").headers["Access-Control-Allow-Origin"] == "*"
+    r = client.request("OPTIONS", "/api/summary")
+    assert r.status_code == 204 and "GET" in r.headers["Access-Control-Allow-Methods"]
+
+
+def test_body_too_large(client):
+    r = client.post("/api/events", content=b"x" * 1_000_001)
+    assert r.status_code == 413
+
+
+@pytest.mark.parametrize("params", [{"limit": 0}, {"limit": 10001}, {"limit": "abc"}, {"since_ms": "x"}])
+def test_bad_query_params(client, params):
+    r = client.get("/api/events", params=params)
+    assert r.status_code == 422 and r.json()["detail"][0]["path"] in params
+
+
+def test_summary_recent_bounds(client):
+    assert client.get("/api/summary", params={"recent": 501}).status_code == 422
+    assert client.get("/api/summary", params={"recent": 0}).json()["recent_events"] == []
+
+
+def test_errors_are_json_with_path(client):
+    r = post(client, batch(ev(1, species="person")))
+    body = r.json()
+    assert r.headers["Content-Type"] == "application/json"
+    assert body["detail"][0]["path"] == "events/0/species"

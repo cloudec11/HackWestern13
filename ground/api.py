@@ -1,71 +1,78 @@
-"""Ground station ingest API (agent-3, task P1-3).
+"""Ground station ingest API (agent-3, task P1-3). Python standard library only.
 
 Receives visit events and heartbeats from Pods (shared/event_schema.json v1),
-stores them in SQLite, and serves a summary for the dashboard.
+stores them in SQLite, and serves a summary for the dashboard. It runs
+unchanged on the laptop and on the QNX Pi (Python 3.10+, no pip packages).
 
 Run from the repo root:
-    ground/.venv/Scripts/python -m uvicorn ground.api:app --host 0.0.0.0 --port 8000
+    python -m ground.api                       # 0.0.0.0:8000, db ground/db/pod.sqlite3
+    python -m ground.api --port 8000 --db /path/pod.sqlite3 --quiet
 
-Environment:
-    POD_DB   path to the SQLite file (default ground/db/pod.sqlite3)
+Environment (used when the flags are absent):
+    POD_DB   path to the SQLite file
+    POD_PORT port (default 8000)
 
 Endpoints:
     POST /api/events     body: event_batch     -> event_ack
     POST /api/heartbeat  body: heartbeat       -> heartbeat_ack
-    GET  /api/summary    dashboard overview (pods, species counts, recent visits)
-    GET  /api/events     raw visits, filterable (for density.py and the dashboard)
+    GET  /api/summary    ?recent=20            dashboard overview
+    GET  /api/events     ?pod_id=&species=&since_ms=&limit=200
     GET  /health         liveness check
+
+Errors are JSON: {"detail": [{"path": ..., "error": ...}, ...]} with HTTP 422
+for bad input, 404 for unknown paths, 405 for a wrong method, 413 for a body over 1 MB.
+
+`create_app(db_path)` returns a plain WSGI app, for tests or another WSGI server.
 """
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import sqlite3
+import sys
 import time
+import traceback
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator
+from socketserver import ThreadingMixIn
+from typing import Any, Callable, Iterator
+from urllib.parse import parse_qs
+from wsgiref.simple_server import WSGIRequestHandler, WSGIServer, make_server
 
-from fastapi import Body, FastAPI, HTTPException, Query
-from fastapi.middleware.cors import CORSMiddleware
-from jsonschema import Draft202012Validator
-from referencing import Registry, Resource
+from ground.schema_check import load_validators
 
-ROOT = Path(__file__).resolve().parent.parent
-SCHEMA_PATH = ROOT / "shared" / "event_schema.json"
-SQL_PATH = Path(__file__).resolve().parent / "db" / "schema.sql"
-DEFAULT_DB = Path(__file__).resolve().parent / "db" / "pod.sqlite3"
+HERE = Path(__file__).resolve().parent
+SQL_PATH = HERE / "db" / "schema.sql"
+DEFAULT_DB = HERE / "db" / "pod.sqlite3"
+MAX_BODY = 1_000_000
 
 EVENT_COLS = ["pod_id", "seq", "t_start_ms", "t_end_ms", "class_id", "species", "max_score",
               "track_id", "n_frames", "thumb_path", "lat", "lon", "loc_source"]
 HEARTBEAT_COLS = ["pod_id", "seq", "t_wall_ms", "infer_p50_ms", "infer_p99_ms", "e2e_p50_ms",
                   "e2e_p99_ms", "temp_c", "disk_free_mb", "restarts", "queue_depth", "last_ack_seq"]
 
-
-# ---- Schema validation (shared/event_schema.json is the single source of truth) ----
-
-def _load_validators() -> dict[str, Draft202012Validator]:
-    schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
-    registry = Registry().with_resource(schema["$id"], Resource.from_contents(schema))
-    return {
-        name: Draft202012Validator({"$ref": f"{schema['$id']}#/$defs/{name}"}, registry=registry)
-        for name in ("event_batch", "heartbeat")
-    }
-
-
-VALIDATORS = _load_validators()
-
-
-def _validate(kind: str, body: Any) -> None:
-    errors = sorted(VALIDATORS[kind].iter_errors(body), key=lambda e: list(e.absolute_path))
-    if errors:
-        detail = [{"path": "/".join(str(p) for p in e.absolute_path) or "(root)", "error": e.message}
-                  for e in errors[:20]]
-        raise HTTPException(status_code=422, detail=detail)
+VALIDATORS = load_validators()   # shared/event_schema.json is the single source of truth
 
 
 def now_ms() -> int:
     return int(time.time() * 1000)
+
+
+class HTTPError(Exception):
+    def __init__(self, status: int, detail: Any):
+        super().__init__(detail)
+        self.status, self.detail = status, detail
+
+
+def _problems(errors: list[tuple[str, str]]) -> list[dict]:
+    return [{"path": p, "error": m} for p, m in errors[:20]]
+
+
+def _validate(kind: str, body: Any) -> None:
+    errors = VALIDATORS[kind].errors(body)
+    if errors:
+        raise HTTPError(422, _problems(errors))
 
 
 # ---- Storage ----
@@ -105,7 +112,7 @@ class Store:
         acked = c.execute("SELECT acked_seq FROM pods WHERE pod_id = ?", (pod_id,)).fetchone()[0]
         for (seq,) in c.execute(
             "SELECT seq FROM events WHERE pod_id = ? AND seq > ? ORDER BY seq", (pod_id, acked)
-        ):
+        ).fetchall():
             if seq != acked + 1:
                 break
             acked = seq
@@ -163,7 +170,7 @@ class Store:
     def summary(self, recent: int) -> dict:
         with self.conn() as c:
             pods = []
-            for p in c.execute("SELECT * FROM pods ORDER BY pod_id"):
+            for p in c.execute("SELECT * FROM pods ORDER BY pod_id").fetchall():
                 p = dict(p)
                 p["n_events"] = c.execute("SELECT COUNT(*) FROM events WHERE pod_id = ?",
                                           (p["pod_id"],)).fetchone()[0]
@@ -193,22 +200,68 @@ def _clean(row: dict) -> dict:
     return {k: v for k, v in row.items() if v is not None}
 
 
+# ---- Request helpers ----
+
+def _int_param(q: dict, name: str, default: int | None, lo: int | None = None,
+               hi: int | None = None) -> int | None:
+    vals = q.get(name)
+    if not vals or vals[-1] == "":
+        return default
+    try:
+        n = int(vals[-1])
+    except ValueError:
+        raise HTTPError(422, [{"path": name, "error": f"{vals[-1]!r} is not an integer"}])
+    if (lo is not None and n < lo) or (hi is not None and n > hi):
+        raise HTTPError(422, [{"path": name, "error": f"must be between {lo} and {hi}"}])
+    return n
+
+
+def _str_param(q: dict, name: str) -> str | None:
+    vals = q.get(name)
+    return vals[-1] if vals and vals[-1] != "" else None
+
+
+def _read_json(environ: dict) -> Any:
+    try:
+        length = int(environ.get("CONTENT_LENGTH") or 0)
+    except ValueError:
+        length = 0
+    if length > MAX_BODY:
+        raise HTTPError(413, [{"path": "(body)", "error": f"body over {MAX_BODY} bytes"}])
+    raw = environ["wsgi.input"].read(length) if length else b""
+    try:
+        return json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as e:
+        raise HTTPError(422, [{"path": "(body)", "error": f"body is not valid JSON: {e}"}])
+
+
 # ---- App ----
 
-def create_app(db_path: str | os.PathLike | None = None) -> FastAPI:
-    store = Store(db_path or os.environ.get("POD_DB", DEFAULT_DB))
-    app = FastAPI(title="The Pod ground station", version="1")
-    app.state.store = store
-    # Hackathon LAN only: let the dashboard (any local origin) call the API.
-    app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"],
-                       allow_headers=["*"])
+CORS = [("Access-Control-Allow-Origin", "*"),
+        ("Access-Control-Allow-Methods", "GET, POST, OPTIONS"),
+        ("Access-Control-Allow-Headers", "Content-Type")]
+REASONS = {200: "OK", 204: "No Content", 404: "Not Found", 405: "Method Not Allowed",
+           413: "Payload Too Large", 422: "Unprocessable Entity", 500: "Internal Server Error"}
 
-    @app.get("/health")
-    def health() -> dict:
-        return {"ok": True, "time_ms": now_ms()}
 
-    @app.post("/api/events")
-    def post_events(body: Any = Body(...)) -> dict:
+class App:
+    """WSGI application. Routes: {(method, path): handler(environ, query) -> dict|list}."""
+
+    def __init__(self, db_path: str | os.PathLike):
+        self.store = Store(db_path)
+        self.routes: dict[tuple[str, str], Callable[[dict, dict], Any]] = {
+            ("GET", "/health"): lambda env, q: {"ok": True, "time_ms": now_ms()},
+            ("POST", "/api/events"): self.post_events,
+            ("POST", "/api/heartbeat"): self.post_heartbeat,
+            ("GET", "/api/summary"): lambda env, q: self.store.summary(
+                _int_param(q, "recent", 20, 0, 500)),
+            ("GET", "/api/events"): lambda env, q: self.store.events(
+                _str_param(q, "pod_id"), _str_param(q, "species"),
+                _int_param(q, "since_ms", None), _int_param(q, "limit", 200, 1, 10000)),
+        }
+
+    def post_events(self, environ: dict, q: dict) -> dict:
+        body = _read_json(environ)
         _validate("event_batch", body)
         pod_id = body["pod_id"]
         problems = []
@@ -219,25 +272,73 @@ def create_app(db_path: str | os.PathLike | None = None) -> FastAPI:
             if ev["t_end_ms"] < ev["t_start_ms"]:
                 problems.append({"path": f"events/{i}/t_end_ms", "error": "t_end_ms < t_start_ms"})
         if problems:
-            raise HTTPException(status_code=422, detail=problems)
-        return store.add_events(pod_id, body["events"])
+            raise HTTPError(422, problems)
+        return self.store.add_events(pod_id, body["events"])
 
-    @app.post("/api/heartbeat")
-    def post_heartbeat(body: Any = Body(...)) -> dict:
+    def post_heartbeat(self, environ: dict, q: dict) -> dict:
+        body = _read_json(environ)
         _validate("heartbeat", body)
-        return store.add_heartbeat(body)
+        return self.store.add_heartbeat(body)
 
-    @app.get("/api/summary")
-    def get_summary(recent: int = Query(20, ge=0, le=500)) -> dict:
-        return store.summary(recent)
+    def __call__(self, environ: dict, start_response: Callable) -> list[bytes]:
+        method = environ.get("REQUEST_METHOD", "GET").upper()
+        path = environ.get("PATH_INFO", "/").rstrip("/") or "/"
+        if method == "OPTIONS":                       # CORS preflight from the dashboard
+            start_response("204 No Content", CORS)
+            return [b""]
+        try:
+            handler = self.routes.get((method, path))
+            if handler is None:
+                if any(p == path for _, p in self.routes):
+                    raise HTTPError(405, [{"path": path, "error": f"{method} not allowed"}])
+                raise HTTPError(404, [{"path": path, "error": "no such endpoint"}])
+            status, payload = 200, handler(environ, parse_qs(environ.get("QUERY_STRING", "")))
+        except HTTPError as e:
+            status, payload = e.status, {"detail": e.detail}
+        except Exception as e:                        # never crash the server on one request
+            traceback.print_exc(file=sys.stderr)
+            status, payload = 500, {"detail": [{"path": path, "error": f"{type(e).__name__}: {e}"}]}
+        data = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+        start_response(f"{status} {REASONS.get(status, '')}",
+                       [("Content-Type", "application/json"), ("Content-Length", str(len(data)))] + CORS)
+        return [data]
 
-    @app.get("/api/events")
-    def get_events(pod_id: str | None = None, species: str | None = None,
-                   since_ms: int | None = None,
-                   limit: int = Query(200, ge=1, le=10000)) -> list[dict]:
-        return store.events(pod_id, species, since_ms, limit)
 
-    return app
+def create_app(db_path: str | os.PathLike | None = None) -> App:
+    return App(db_path or os.environ.get("POD_DB") or DEFAULT_DB)
 
 
-app = create_app()
+class _ThreadingServer(ThreadingMixIn, WSGIServer):
+    daemon_threads = True
+    allow_reuse_address = True
+
+
+class _QuietHandler(WSGIRequestHandler):
+    def log_message(self, *args) -> None:
+        pass
+
+
+def serve(host: str, port: int, db_path: str | os.PathLike | None, quiet: bool = False) -> None:
+    app = create_app(db_path)
+    handler = _QuietHandler if quiet else WSGIRequestHandler
+    with make_server(host, port, app, server_class=_ThreadingServer, handler_class=handler) as srv:
+        print(f"ground API on http://{host}:{port}  db={app.store.db_path}", file=sys.stderr, flush=True)
+        try:
+            srv.serve_forever()
+        except KeyboardInterrupt:
+            pass
+
+
+def main(argv=None) -> int:
+    p = argparse.ArgumentParser(description="The Pod ground station API (stdlib only)")
+    p.add_argument("--host", default="0.0.0.0")
+    p.add_argument("--port", type=int, default=int(os.environ.get("POD_PORT", 8000)))
+    p.add_argument("--db", default=None, help="SQLite path (default: $POD_DB or ground/db/pod.sqlite3)")
+    p.add_argument("--quiet", action="store_true", help="don't log every request")
+    a = p.parse_args(argv)
+    serve(a.host, a.port, a.db, a.quiet)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

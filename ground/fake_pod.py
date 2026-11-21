@@ -16,12 +16,13 @@ Examples (from the repo root, server already running on :8000):
     # print the JSON instead of sending it
     python -m ground.fake_pod --dry-run --duration 5
 
-The class ids are PLACEHOLDERS until agent-2 publishes the label table in models/.
+Class ids come from agent-2's label table, models/labels.csv.
 All numbers are made up: never show them as real measurements.
 """
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import math
 import random
@@ -29,11 +30,28 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 from typing import Callable, Optional
 
-# Placeholder compact label ids (0 = unknown, no person). Replace with models/ table.
-SPECIES_IDS = {"bird": 1, "cat": 2, "dog": 3, "horse": 4, "sheep": 5, "cow": 6,
-               "elephant": 7, "bear": 8, "zebra": 9, "giraffe": 10}
+LABELS_CSV = Path(__file__).resolve().parent.parent / "models" / "labels.csv"
+
+
+def load_species_ids(path: Path = LABELS_CSV) -> dict[str, int]:
+    """species -> class_id from agent-2's label table (models/labels.csv).
+    Falls back to the same ids if the file is missing (it matched them when written)."""
+    fallback = {"bird": 1, "cat": 2, "dog": 3, "horse": 4, "sheep": 5, "cow": 6,
+                "elephant": 7, "bear": 8, "zebra": 9, "giraffe": 10, "teddy_bear": 11}
+    try:
+        lines = [l for l in path.read_text(encoding="utf-8").splitlines()
+                 if l.strip() and not l.startswith("#")]
+    except OSError:
+        return fallback
+    ids = {row["species"]: int(row["class_id"]) for row in csv.DictReader(lines)}
+    ids.pop("unknown", None)
+    return ids or fallback
+
+
+SPECIES_IDS = load_species_ids()
 
 # Default "habitat": expected visits per camera-day for each species (illustrative).
 DEFAULT_RATES = {"zebra": 6.0, "giraffe": 3.0, "elephant": 2.0, "bird": 10.0, "horse": 1.5}
