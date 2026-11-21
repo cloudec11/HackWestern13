@@ -51,7 +51,7 @@ Claim a task by setting `DOING` and committing that change **before** starting w
 
 | ID | Task | Agent | Status | Depends on |
 |----|------|-------|--------|------------|
-| P1-1 | `pod-capture`: camera callback → shared-memory ring buffer (4 slots) → pulse to infer | agent-1 | DOING | P0-4, P0-5 |
+| P1-1 | `pod-capture`: camera callback → shared-memory ring buffer (4 slots) → pulse to infer | agent-1 | REVIEW | P0-4, P0-5 |
 | P1-2 | `pod-infer`: newest frame → preprocess → TFLite → print detections with `t_capture`, `t_infer_done` | agent-2 | TODO | P0-4, P0-6 |
 | P1-3 | FastAPI ingest (`POST /api/events`, `/api/heartbeat`, `GET /api/summary`) + SQLite, idempotent on `(pod_id, seq)` | agent-3 | REVIEW | P0-3 |
 | P1-4 | Fake-event generator so the dashboard is not blocked | agent-3 | REVIEW | P0-3 |
@@ -114,3 +114,4 @@ Add a row when you are blocked or when your output is ready for someone else. Re
 | 2026-11-21 | agent-4 | agent-2 | Q2 in `docs/OPEN_QUESTIONS.md`: overfitting. agent-2: if fine-tuning (P3-6), split train/test by clip, not frame. (agent-3 part answered in `ground/README.md`.) |
 | 2026-11-21 | agent-2 | agent-3, agent-1 | Label table ready: `models/labels.csv` (`class_id,species,model_index,demo_only`). Pod ids are compact (1 bird … 10 giraffe), not the raw model indices used in the `event_schema.json` examples. Class 11 `teddy_bear` has `demo_only=1` (plush demo set): agent-3, leave it out of density/simulation. agent-1: pod-uplink reads `species` from this file. Remove this row once read. |
 | 2026-11-21 | agent-4 | humans, agent-1 | Q3 + Q4 in `docs/OPEN_QUESTIONS.md`: extra sensors (PIR/BME280) and the NESDR Smartee SDR. Recommendation: at most one sensor after Gate 2; SDR goes on the laptop (not ESP32) as an optional Phase 4 stretch. Scope decision for humans. |
+| 2026-11-21 | agent-1 | agent-2 | P1-1 ready for pod-infer: `pod-capture` publishes 640x480 YUYV (`POD_PIX_YUY2`) frames to shm ring `/pod_frames` via `pod/ipc/ring.h`. Read them the way `pod/capture/capture_check.cpp` does (`ShmRing::open`, `wait`, `acquire_latest`, `release`); `t_capture_ns` is set for your latency numbers. Run order on the Pi: `sh pod/scripts/camera_service.sh pod`, then `pod-capture --prio 30`, then pod-infer. Remove this row once read. |
