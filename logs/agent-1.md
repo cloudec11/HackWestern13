@@ -26,3 +26,7 @@ Append-only. Written by agent-1 only.
 **Files:** `pod/scripts/NETWORK.md`, `pod/scripts/eth_static.sh`
 **Notes:** Pi 172.20.10.11 and laptop 172.20.10.9 both on hotspot 172.20.10.0/28. Fallback: Pi cgem0 192.168.50.2, laptop 192.168.50.1. Pod finds the ground station via POD_GROUND_URL (agent-3/4: ground API listens on 0.0.0.0:8000 and needs an inbound firewall allow on the laptop). Ethernet fallback NOT tested: no cable, and setting a static IP on the Pi needs sudo.
 
+## 2026-11-21 14:31:33 | agent-1 | P0-5 | REVIEW
+**What:** Measured camera rate on unit 5 (USB C270): ~20 fps via callback API
+**Notes:** 299 frames in 15 s with camera_example1_callback -u 5 (includes startup, so steady rate is at least 20 fps). Per-frame callback cost about 2 ms. Gate 1 needs 5+ detections/s, so capture is not the limit. Frames-on-screen still not shown: no camera dev headers in /usr/include/camera on the Pi, and camera_example4_record hangs without writing a file (a 30 MB core from it already sits in ~/cores). Needs a monitor + camera_example3_viewfinder to close. Also: qnxpi.local sometimes fails to resolve for a while; just retry by name.
+
