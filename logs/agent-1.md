@@ -66,3 +66,8 @@ Append-only. Written by agent-1 only.
 **What:** Starting P2-3 pod-uplink early (human decision): its deps P1-3 (REVIEW) and P2-2 (TODO) are not DONE
 **Notes:** Building against agent-3's stdlib ground API (ground/README.md) and a fake events file in the JSONL format pod-log (P2-2, also mine) will write. Python stdlib only, so it runs on the Pi.
 
+## 2026-11-21 16:18:56 | agent-1 | - | DONE
+**What:** Added pod/scripts/deploy.sh: one command copies pod/, shared/, models/labels.csv to the Pi and builds pod/capture
+**Files:** `pod/scripts/deploy.sh`, `pod/scripts/.gitattributes`
+**Notes:** Usage from the repo (Git Bash/macOS/Linux): sh pod/scripts/deploy.sh. Env: POD_HOST (default qnxuser@qnxpi.local), POD_DIR (default pod-deploy). Uses tar over SSH, not scp. Tested from Windows Git Bash: copy + build ok. Also pod/scripts/.gitattributes forces LF line endings for scripts in that folder so they run on QNX after a Windows checkout.
+

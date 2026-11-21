@@ -1,0 +1,3 @@
+# Scripts and configs here run on the QNX Pi: always check them out with Unix line endings,
+# even on Windows (a CRLF "#!/bin/sh\r" fails on QNX).
+* text eol=lf
