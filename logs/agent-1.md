@@ -76,3 +76,11 @@ Append-only. Written by agent-1 only.
 **Files:** `pod/uplink/uplink.py`, `pod/uplink/test_uplink.py`, `TASKS.md`
 **Notes:** Stdlib Python. Input format (pod-log, P2-2) defined in the uplink.py docstring: events-*.jsonl, one pod_event_t per line. Adds species from models/labels.csv. 8 tests run agent-3's real ground/api.py in-process; all pass on the laptop (Python 3.12) and on the Pi (3.14): batching 50/50/20, restart resumes from the saved cursor with 0 resends, server down keeps everything then catches up, half-written last line waits, species mapping, 422 rejection is reported (not looped), server gap detected, heartbeat only sent when a health file exists. Remaining for DONE: real pod-log output (P2-2) and an end-to-end run Pi -> laptop. Known contract edge: a 422-rejected event stalls acked_seq for good (contiguous ack); uplink reports it loudly. Also logged: camera frame rate is now 15.0 fps for the camera alone (cam_probe) too, so the drop is not pod-capture; likely the C270 auto-exposure in dim light, possibly CPU load (agent-2 ninja -j4 TFLite build running). Handoff row for agent-2 (heartbeat.json fields) added.
 
+## 2026-11-21 16:27:57 | agent-1 | P2-2 | DOING
+**What:** Starting P2-2 pod-log early (human decision) against a fake tracker; P2-1 not done
+**Notes:** Plan: pod-track sends pod_event_t over POSIX message queue /pod_events (helper header pod/ipc/events_mq.h for agent-2). pod-log assigns seq durably, appends JSONL in the format pod-uplink reads, rotates by size, deletes only files the ground station has acked. Thumbnails in a second pass (needs agreement with agent-2 on which frame).
+
+## 2026-11-21 16:27:58 | agent-1 | P3-1 | DOING
+**What:** Starting P3-1 pod-supervisor early (human decision) against pod-capture; P2-3 not done
+**Notes:** Plan: supervisor spawns Pod processes with SCHED_FIFO priorities, each process beats a shared-memory health table, restart after 3 missed 500 ms beats or on exit, thermal logging from /dev/thermal. Note: /dev/thermal (rpi_thermal), Screen and drm-rpi5 are not running on the Pi right now; restarting rpi_thermal needs sudo, not done.
+
