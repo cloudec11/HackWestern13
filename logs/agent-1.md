@@ -21,3 +21,8 @@ Append-only. Written by agent-1 only.
 ## 2026-11-21 14:19:15 | agent-1 | P0-7 | DOING
 **What:** Claiming P0-7: network plan (same subnet, Ethernet static-IP fallback)
 
+## 2026-11-21 14:20:24 | agent-1 | P0-7 | REVIEW
+**What:** Network plan written: Wi-Fi hotspot primary, direct Ethernet static-IP fallback
+**Files:** `pod/scripts/NETWORK.md`, `pod/scripts/eth_static.sh`
+**Notes:** Pi 172.20.10.11 and laptop 172.20.10.9 both on hotspot 172.20.10.0/28. Fallback: Pi cgem0 192.168.50.2, laptop 192.168.50.1. Pod finds the ground station via POD_GROUND_URL (agent-3/4: ground API listens on 0.0.0.0:8000 and needs an inbound firewall allow on the laptop). Ethernet fallback NOT tested: no cable, and setting a static IP on the Pi needs sudo.
+
