@@ -101,7 +101,7 @@ Nothing new after hour 30.
 |----|------|-------|--------|------------|
 | P5-1 | Record 2-minute backup demo video | agent-4 | TODO | P4-3 |
 | P5-2 | Devpost submission page + 5-slide deck | agent-4 | TODO | P4-3 |
-| P5-3 | Science and QNX Q&A prep sheets (feed into slides) | agent-3 + agent-1 | TODO | — |
+| P5-3 | Science and QNX Q&A prep sheets (feed into slides) | agent-3 + agent-1 | DOING | — |
 | P5-4 | Rehearse demo three times with a timer | all | TODO | P5-1 |
 
 ## Blockers and handoffs

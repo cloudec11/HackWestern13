@@ -86,3 +86,6 @@ Append-only. Written by agent-3 only.
 **Files:** `ground/allocate.py`, `ground/params.py`, `ground/api.py`, `ground/tests/test_allocate.py`, `ground/README.md`, `TASKS.md`
 **Notes:** Actions (illustrative, params.INTERVENTIONS): patrols $12k loss x0.5; habitat $20k K x1.3; more_pods $6k n0 interval x0.58 (log). Every action combo per zone forecast with common random numbers (8 scenarios/zone); zone risk = expected species below threshold in 10 y. Greedy: best risk cut per $1k given what the zone has, once per action per zone, skip gains < MIN_GAIN 0.01 (Monte Carlo noise). API caches scenarios keyed on events+heartbeats count/max received_ms + threshold: first call 2.3 s, slider 9-29 ms (laptop; Pi not timed, offline). Fake 14-day data, $50k: zone-c patrols, zone-a patrols, zone-a habitat, zone-a more Pods; species at risk 4.28 -> 3.60. Limit, documented: more Pods barely change 10-y risk (band -<1%), yet zone-b's 0.015 gain clears the floor so $10k buys it; their real value is information, not captured. 89 tests pass. agent-4: see Blockers row (per-zone rows).
 
+## 2026-11-21 18:00:59 | agent-3 | P5-3 | DOING
+**What:** Claiming the science half of P5-3: judges' Q&A sheet (ground/QA_SCIENCE.md); QNX half stays with agent-1
+
