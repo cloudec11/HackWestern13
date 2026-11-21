@@ -94,3 +94,8 @@ Append-only. Written by agent-3 only.
 **Files:** `ground/QA_SCIENCE.md`, `ground/README.md`, `TASKS.md`
 **Notes:** 13 questions (where's the AI, REM, are parameters real, does the forecast work + backtest, one population, budget advice, why more Pods barely help, birds, people/privacy, plush toys, bandwidth, outages, fake data) with short spoken answers, detail if pushed, evidence paths, and a don't-say list. Every ground-side number re-derived from code/data before commit. Corrections found while checking: a visit event is ~160 bytes of JSON (measured), not the plan's ~500; the held-out backtest has 19 start years (README fixed too). Bottom section: QNX/real-time numbers gathered from agent-1 and agent-2 logs for agent-1's half, plus the gap: no CPU-hog stress test (P3-2) numbers yet.
 
+## 2026-11-21 18:12:34 | agent-3 | - | DONE
+**What:** GET /api/params: every science setting, read live from ground/params.py
+**Files:** `ground/api.py`, `ground/tests/test_api.py`, `ground/README.md`
+**Notes:** So a dashboard can show the numbers used without copying them. Includes per-species sigma_deployed (after NOISE_SCALE) and zone threat levels. Charts/graphs are agent-4's (per agent-3's human): I built a local preview page while checking the numbers, but deleted it and committed no graph code. 90 tests pass.
+

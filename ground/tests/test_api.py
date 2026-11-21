@@ -197,3 +197,13 @@ def test_scene_for_habitat_view(client):
     assert client.get("/api/scene", params={"hours": 72}).json()["animals"][0] == {"species": "zebra", "count": 2}
     assert {"species": "sheep", "count": 1} in client.get("/api/scene", params={"hours": 72}).json()["animals"]
     assert client.get("/api/scene", params={"hours": 0}).status_code == 422
+
+
+def test_params_report_matches_code(client):
+    from ground import params as P
+    r = client.get("/api/params").json()
+    assert r["camera"]["r_km"] == P.CAMERA["r_km"] and r["forecast"]["noise_scale"] == P.NOISE_SCALE
+    assert r["species"]["elephant"]["sigma_deployed"] == round(P.GROWTH["elephant"]["sigma"] * P.NOISE_SCALE, 3)
+    assert r["species"]["bird"]["rem_ok"] is False and "r_g" not in r["species"]["bird"]
+    assert {z["zone_id"] for z in r["zones"]} == {"zone-a", "zone-b", "zone-c"}
+    assert r["interventions"]["patrols"]["cost"] == P.INTERVENTIONS["patrols"]["cost"]

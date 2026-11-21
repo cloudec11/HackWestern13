@@ -270,6 +270,7 @@ class App:
             ("GET", "/api/scene"): self.get_scene,
             ("GET", "/api/simulation"): self.get_simulation,
             ("GET", "/api/allocate"): self.get_allocate,
+            ("GET", "/api/params"): lambda env, q: params_report(),
         }
         self._alloc_cache: tuple | None = None   # (data version, threshold, scenario table)
         self._alloc_lock = threading.Lock()
@@ -382,6 +383,31 @@ class App:
         start_response(f"{status} {REASONS.get(status, '')}",
                        [("Content-Type", "application/json"), ("Content-Length", str(len(data)))] + CORS)
         return [data]
+
+
+def params_report() -> dict:
+    """Every setting the science uses, straight from ground/params.py (nothing copied by hand)."""
+    def lst(v):
+        return list(v) if isinstance(v, tuple) else v
+    return {
+        "illustrative": True,
+        "note": "All values are illustrative except NOISE_SCALE, which was calibrated on real moose counts.",
+        "camera": dict(params.CAMERA),
+        "species": {sp: {"v_km_per_day": d.get("v_km_per_day"), "rem_ok": d.get("rem_ok"),
+                         **({k: lst(v) for k, v in params.GROWTH[sp].items()} if sp in params.GROWTH else {}),
+                         **({"sigma_deployed": round(params.GROWTH[sp]["sigma"] * params.NOISE_SCALE, 3)}
+                            if sp in params.GROWTH else {})}
+                    for sp, d in params.SPECIES.items()},
+        "zones": [{**{k: z[k] for k in ("zone_id", "name", "area_km2", "pods", "biome")},
+                   "threat": params.ZONE_THREAT.get(z["zone_id"], 1.0)} for z in params.ZONES],
+        "interventions": params.INTERVENTIONS,
+        "forecast": {"years": params.FORECAST_YEARS, "runs": params.FORECAST_RUNS,
+                     "threshold": params.QUASI_EXTINCTION, "k_factor": list(params.K_FACTOR),
+                     "noise_scale": params.NOISE_SCALE},
+        "density": {"min_visits": params.MIN_VISITS, "outage_gap_min": params.OUTAGE_GAP_MIN,
+                    "bootstrap_resamples": params.BOOTSTRAP_RESAMPLES, "ci_level": params.CI_LEVEL},
+        "allocation": {"min_gain": params.MIN_GAIN, "default_budget": params.DEFAULT_BUDGET},
+    }
 
 
 def create_app(db_path: str | os.PathLike | None = None) -> App:

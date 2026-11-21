@@ -227,6 +227,10 @@ python -m http.server 8080 --directory ground/dashboard/sim
 - `biome` comes from the zone's setting in `ground/params.py`.
 - `weather` is an honest placeholder: no one owns a weather feed yet. With no `hour`, the view uses the viewer's clock.
 
+### `GET /api/params` (built)
+
+This returns every setting the science uses, read straight from `ground/params.py`: camera range and angle; per species, travel distance, growth range, noise (with the deployed value after `NOISE_SCALE`) and loss rate; zones with area, threat level, Pods and biome; the budget actions' costs and effects; and the forecast, density and allocation settings. Use it to show "numbers used" without copying values by hand. Everything except `NOISE_SCALE` is illustrative.
+
 ### `GET /api/zones`
 
 ```json
