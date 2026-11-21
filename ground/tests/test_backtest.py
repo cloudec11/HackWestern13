@@ -1,4 +1,6 @@
 """The backtest runs on the real Isle Royale data (it measures accuracy; it doesn't assert it)."""
+import pytest
+
 from ground.backtest import MOOSE, forecast_from, load, rolling
 
 
@@ -19,3 +21,25 @@ def test_forecast_and_rolling_run():
 def test_settings_are_fixed_up_front():
     # guard against quietly tuning the moose settings to the test data
     assert MOOSE == {"r_g": (0.15, 0.30), "sigma": 0.15, "loss_rate": 0.04}
+
+
+def test_calibration_never_sees_test_years():
+    from ground.backtest import TEST_FIRST, TRAIN_LAST, rolling
+    c = load()
+    train = rolling(c, 5, last_target=TRAIN_LAST)
+    assert max(train["starts"]) < TRAIN_LAST and TEST_FIRST > TRAIN_LAST
+    test = rolling(c, 5, first=TEST_FIRST)
+    assert min(test["starts"]) >= TEST_FIRST
+
+
+def test_interval_score():
+    from ground.backtest import interval_score
+    assert interval_score(10, 20, 15) == 10                  # inside: just the width
+    assert interval_score(10, 20, 25) == 10 + 20 * 5         # outside: width + 2/alpha * miss
+
+
+def test_deployed_noise_scale_matches_calibration():
+    from ground import params
+    from ground.backtest import calibrate
+    best = calibrate(load())[0]
+    assert best["sigma"] == pytest.approx(MOOSE["sigma"] * params.NOISE_SCALE)

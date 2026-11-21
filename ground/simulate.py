@@ -103,7 +103,8 @@ def inputs_for(density_result: dict, threshold: float | None = None) -> Inputs |
     threat = params.ZONE_THREAT.get(density_result["zone_id"], 1.0)
     ci = density_result.get("n0_ci")
     inp = Inputs(n0=float(density_result["n0"]), n0_ci=tuple(ci) if ci else None,
-                 r_g=sp["r_g"], sigma=sp["sigma"], loss_rate=sp["loss_rate"] * threat)
+                 r_g=sp["r_g"], sigma=sp["sigma"] * params.NOISE_SCALE,
+                 loss_rate=sp["loss_rate"] * threat)
     return replace(inp, threshold=threshold) if threshold is not None else inp
 
 
@@ -135,7 +136,8 @@ def forecast_result(density_result: dict, threshold: float | None = None) -> dic
             "zone_threat": params.ZONE_THREAT.get(zone, 1.0),
             "source": {"n0": "pod", "r_g": params.GROWTH_SOURCE,
                        "K": "illustrative: assumes habitat near capacity today",
-                       "sigma": params.GROWTH_SOURCE, "H": params.GROWTH_SOURCE},
+                       "sigma": f"illustrative x{params.NOISE_SCALE:g} (scale calibrated on real Isle Royale moose counts)",
+                       "H": params.GROWTH_SOURCE},
         },
     })
     return out

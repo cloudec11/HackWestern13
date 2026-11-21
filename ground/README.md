@@ -134,7 +134,7 @@ As built (`ground/simulate.py`, parameters in `ground/params.py`):
 
 This tests the forecast on **Isle Royale moose, 1980–2026** (U.S. National Park Service, public domain, `ground/data/`). For every start year, it forecasts the next 1–5 years and compares the forecast with what actually happened. The comparison includes a "nothing changes" baseline. The moose settings were fixed before looking at any errors (`ground/backtest.py`).
 
-Result on 2026-11-21, with the deployed model (K = today × 0.9–1.6), over 44 start years:
+**First result, before calibration** (σ 0.15 as originally guessed), over 44 start years:
 
 | Years ahead | Model error | "No change" error | Actual inside 90% band | Bias |
 |---|---|---|---|---|
@@ -142,14 +142,26 @@ Result on 2026-11-21, with the deployed model (K = today × 0.9–1.6), over 44 
 | 3 | 34% | 33% | 51% | −17% |
 | 5 | 41% | 42% | 44% | −21% |
 
-From 2010 (510 moose), it forecast about 505 a year. The real counts reached 1,250 by 2015, after the wolves collapsed (19 → 3). Its errors grew from −2% (2011) to −60% (2015).
+The model was no better than "nothing changes", and its 90% band was far too narrow.
 
-**What this means:**
-- The model is **no better than "nothing changes"**.
-- Its 90% band is **too narrow**: after 5 years, it holds the truth only 44% of the time.
-- It **leans low**.
-- The main cause is the near-capacity assumption for `K`, which pins forecasts to today's level when a population is actually far below capacity. It also can't know about predators (wolves) or disease, which drive Isle Royale.
-- Keep the dashboard's "illustrative" labels.
+**Calibration** (`python -m ground.backtest --calibrate`):
+- **Tuning:** the capacity range and noise σ were tuned using only counts up to 2004, scored with the interval score (Gneiting & Raftery 2007), which rewards bands that are narrow *and* contain the truth.
+- **Judging:** the result was then judged only on forecasts starting in 2005 or later, which tuning never saw.
+- **Choice:** the capacity range stayed at 0.9–1.6, and σ doubled from 0.15 to 0.30.
+
+| On 2005–2026 (held out), 80 comparisons | Interval score | Median error | "No change" error | Actual inside 90% band |
+|---|---|---|---|---|
+| Original (σ 0.15) | 2.40 | 29.9% | 29.7% | 57.5% |
+| **Calibrated (σ 0.30), now deployed** | **1.56** | 31.1% | 29.7% | **93.8%** |
+
+**Deployed:** `params.NOISE_SCALE = 2.0` doubles every species' σ, so species keep their relative variability instead of all copying the moose value. `params.source.sigma` says the scale was calibrated. A test fails if the deployed scale drifts from what calibration picks.
+
+**What the fix does and doesn't do:**
+- **Fixed:** the uncertainty is honest. The 90% band now holds the real count about 90% of the time on years it never saw.
+- **Not fixed:** the median forecast is still about 30% off, the same as "nothing changes", and it still leans low. From 2010 (510 moose), it predicts about 500 a year, while the real counts reached 1,250 by 2015 as the wolves collapsed (19 → 3). That year now falls inside the band for 2011–2014, but not for 2015.
+- **Why:** Isle Royale moose are driven by wolves, disease and hard winters, and a single-species model can't see any of them. Neither more data nor tuning fixes that; it would need those drivers as inputs.
+- **Present it as:** the forecast honestly shows *how uncertain* the future is. It doesn't *predict* the path.
+- **Caveats:** this is one population (moose), and the held-out set is small and overlapping (80 comparisons from about 18 start years).
 
 ### `GET /api/allocate?budget=50000`
 

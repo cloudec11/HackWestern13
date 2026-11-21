@@ -15,7 +15,10 @@ Rules, so the test is honest:
      A forecast is only useful if it beats that.
 
 The model is used exactly as deployed: run_forecast() with K = N[Y] x K_FACTOR,
-a fixed loss rate and log-normal uncertainty on the starting count.
+sigma = MOOSE sigma x params.NOISE_SCALE, a fixed loss rate and log-normal
+uncertainty on the starting count.
+
+    python -m ground.backtest --calibrate          # tune on <=2004, test on 2005+ (how NOISE_SCALE was set)
 
     python -m ground.backtest                      # rolling report, 5-year horizon
     python -m ground.backtest --start 2010         # one start year, year by year
@@ -48,24 +51,31 @@ def load(path: Path = DATA) -> dict[int, int]:
 
 
 def forecast_from(counts: dict[int, int], year: int, horizon: int,
-                  k_factor: tuple[float, float] = params.K_FACTOR) -> dict:
+                  k_factor: tuple[float, float] = params.K_FACTOR, sigma: float | None = None) -> dict:
     n0 = counts[year]
     inp = Inputs(n0=n0, n0_ci=(n0 * SURVEY_CI[0], n0 * SURVEY_CI[1]), r_g=MOOSE["r_g"],
-                 sigma=MOOSE["sigma"], loss_rate=MOOSE["loss_rate"], k_factor=k_factor,
-                 years=horizon, threshold=0)
+                 sigma=MOOSE["sigma"] * params.NOISE_SCALE if sigma is None else sigma, loss_rate=MOOSE["loss_rate"],
+                 k_factor=k_factor, years=horizon, threshold=0)
     return run_forecast(inp, f"backtest/{year}")
 
 
-def rolling(counts: dict[int, int], horizon: int, k_factor=params.K_FACTOR) -> dict:
-    """Forecast from every start year; collect errors by horizon (1..horizon years ahead)."""
-    by_h = {h: {"model": [], "naive": [], "inside": [], "bias": []} for h in range(1, horizon + 1)}
+def rolling(counts: dict[int, int], horizon: int, k_factor=params.K_FACTOR, sigma: float | None = None,
+            first: int | None = None, last_target: int | None = None) -> dict:
+    """Forecast from every start year; collect errors by horizon (1..horizon years ahead).
+
+    first: only start years >= first.  last_target: only compare against years <= last_target
+    (so calibration never sees the test years)."""
+    by_h = {h: {"model": [], "naive": [], "inside": [], "bias": [], "iscore": []} for h in range(1, horizon + 1)}
     starts = []
     for y in sorted(counts):
-        future = [h for h in range(1, horizon + 1) if y + h in counts]
+        if first is not None and y < first:
+            continue
+        future = [h for h in range(1, horizon + 1) if y + h in counts
+                  and (last_target is None or y + h <= last_target)]
         if not future:
             continue
         starts.append(y)
-        fc = forecast_from(counts, y, horizon, k_factor)
+        fc = forecast_from(counts, y, horizon, k_factor, sigma)
         for h in future:
             actual = counts[y + h]
             pred = fc["p50"][h]
@@ -74,7 +84,63 @@ def rolling(counts: dict[int, int], horizon: int, k_factor=params.K_FACTOR) -> d
             b["naive"].append(abs(counts[y] - actual) / actual)
             b["bias"].append((pred - actual) / actual)
             b["inside"].append(fc["p5"][h] <= actual <= fc["p95"][h])
+            b["iscore"].append(interval_score(fc["p5"][h], fc["p95"][h], actual) / actual)
     return {"starts": starts, "by_h": by_h}
+
+
+def interval_score(lo: float, hi: float, y: float, alpha: float = 0.10) -> float:
+    """Gneiting & Raftery (2007) interval score for a (1-alpha) band: its width, plus a
+    penalty of 2/alpha times the distance by which the real value falls outside it.
+    Lower is better. It rewards bands that are narrow AND actually contain the truth."""
+    return (hi - lo) + (2 / alpha) * max(0.0, lo - y) + (2 / alpha) * max(0.0, y - hi)
+
+
+def summarise(res: dict) -> dict:
+    allm = [e for b in res["by_h"].values() for e in b["model"]]
+    alln = [e for b in res["by_h"].values() for e in b["naive"]]
+    alli = [x for b in res["by_h"].values() for x in b["inside"]]
+    alls = [x for b in res["by_h"].values() for x in b["iscore"]]
+    return {"n": len(allm), "model_mape": statistics.median(allm), "naive_mape": statistics.median(alln),
+            "coverage": sum(alli) / len(alli), "iscore": statistics.mean(alls)}
+
+
+# ---- Calibration: tune on early years, judge on later years only ----
+
+TRAIN_LAST = 2004        # calibration may only look at counts up to this year
+TEST_FIRST = 2005        # test forecasts start here, with settings frozen
+K_GRID = [(0.9, 1.6), (0.8, 2.0), (0.7, 2.5), (0.6, 3.0), (0.5, 4.0)]
+SIGMA_GRID = [0.10, 0.15, 0.20, 0.30, 0.40]
+
+
+def calibrate(counts: dict[int, int], horizon: int = 5) -> list[dict]:
+    """Score every (K range, sigma) pair on the training years; best (lowest interval score) first."""
+    rows = []
+    for k in K_GRID:
+        for s in SIGMA_GRID:
+            m = summarise(rolling(counts, horizon, k, s, last_target=TRAIN_LAST))
+            rows.append({"k_factor": k, "sigma": s, **m})
+    return sorted(rows, key=lambda r: r["iscore"])
+
+
+def report_calibration(counts: dict[int, int], horizon: int = 5) -> dict:
+    rows = calibrate(counts, horizon)
+    print(f"CALIBRATION on start years up to {TRAIN_LAST - 1}, compared only with counts up to {TRAIN_LAST}")
+    print(f"{'K factor':>11} {'sigma':>6} {'interval score':>15} {'median error':>13} {'in 90% band':>12}")
+    for r in rows[:6]:
+        print(f"{str(r['k_factor']):>11} {r['sigma']:>6} {r['iscore']:>15.3f} {_pct(r['model_mape']):>13} {_pct(r['coverage']):>12}")
+    cur = next(r for r in rows if r["k_factor"] == params.K_FACTOR and r["sigma"] == MOOSE["sigma"])  # before NOISE_SCALE
+    print(f"{str(cur['k_factor']):>11} {cur['sigma']:>6} {cur['iscore']:>15.3f} {_pct(cur['model_mape']):>13} "
+          f"{_pct(cur['coverage']):>12}   <- original settings (before calibration)")
+    best = rows[0]
+    print(f"\nTEST on start years {TEST_FIRST}+ (never used for tuning), every horizon 1-{horizon} pooled:")
+    print(f"{'settings':>26} {'n':>3} {'interval score':>15} {'median error':>13} {'no-change error':>16} {'in 90% band':>12}")
+    out = {}
+    for label, k, s in (("original", params.K_FACTOR, MOOSE["sigma"]), ("calibrated", best["k_factor"], best["sigma"])):
+        m = summarise(rolling(counts, horizon, k, s, first=TEST_FIRST))
+        out[label] = {"k_factor": k, "sigma": s, **m}
+        print(f"{label + ' ' + str(k) + ' s=' + str(s):>26} {m['n']:>3} {m['iscore']:>15.3f} {_pct(m['model_mape']):>13} "
+              f"{_pct(m['naive_mape']):>16} {_pct(m['coverage']):>12}")
+    return out
 
 
 def _pct(x: float) -> str:
@@ -125,9 +191,13 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--start", type=int, help="show one start year in detail")
     ap.add_argument("--horizon", type=int, default=5)
+    ap.add_argument("--calibrate", action="store_true",
+                    help=f"tune K range and sigma on years <= {TRAIN_LAST}, then test on {TEST_FIRST}+")
     a = ap.parse_args(argv)
     counts = load()
-    if a.start:
+    if a.calibrate:
+        report_calibration(counts, a.horizon)
+    elif a.start:
         report_one(counts, a.start, a.horizon)
     else:
         report_rolling(counts, a.horizon)

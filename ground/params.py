@@ -77,6 +77,13 @@ GROWTH = {
 K_FACTOR = (0.9, 1.6)
 # Threat level per zone, multiplying every species' loss_rate (patrols lower it).
 ZONE_THREAT = {"zone-a": 1.0, "zone-b": 0.6, "zone-c": 1.5, "unassigned": 1.0}
+# Every species' sigma is multiplied by this. Calibrated, not guessed: on real
+# Isle Royale moose counts (ground/backtest.py --calibrate), tuning on 1980-2004
+# picked sigma 0.30 against the 0.15 we'd assumed. Tested on 2005-2026 (never
+# used for tuning), the 90% band then held the real count 94% of the time
+# instead of 58%. Applied as a x2 scale so species keep their relative
+# variability (elephants stay calmer than moose).
+NOISE_SCALE = 2.0
 FORECAST_YEARS = 10
 FORECAST_RUNS = 1000
 QUASI_EXTINCTION = 50     # "at risk" if the population falls below this within the forecast
