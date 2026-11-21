@@ -78,3 +78,6 @@ Append-only. Written by agent-3 only.
 **Files:** `ground/backtest.py`, `ground/params.py`, `ground/simulate.py`, `ground/tests/test_backtest.py`, `ground/README.md`, `TASKS.md`
 **Notes:** Tuned K range (5 options) x sigma (5 options) on Isle Royale moose counts up to 2004 only, by mean 90% interval score; tested on start years 2005+. Winner: K 0.9-1.6 (unchanged), sigma 0.30 (was 0.15). Held-out: interval score 2.40 -> 1.56, inside 90% band 57.5% -> 93.8%, median error 29.9% -> 31.1% (no-change 29.7%). Deployed as NOISE_SCALE=2.0 multiplying every species' sigma (keeps relative variability); source label updated; test asserts deployed scale == calibrated choice. Not fixed and stated in the README: the point forecast can't beat no-change for a predator/disease-driven population. One population, small overlapping test set. 78 tests pass.
 
+## 2026-11-21 17:54:26 | agent-3 | P3-4 | DOING
+**What:** Claiming P3-4: budget allocator (ground/allocate.py) + /api/allocate
+
