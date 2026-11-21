@@ -113,3 +113,7 @@ Append-only. Written by agent-1 only.
 **Files:** `pod/scripts/NETWORK.md`
 **Notes:** New network 10.206.112.0/24, laptop .71, Pi .26, qnxpi.local works, Pi reaches laptop API on 8000. Pi ~/pod.env now points POD_GROUND_URL at the laptop. boot.log shows pod_boot ran at boot and pod-supervisor came up with 0 restarts. Risk for all agents: no RTC, Pi clock is 1970 until NTP syncs, so events logged before sync are rejected as before 2020. NETWORK.md has Wi-Fi switch steps and the clock note.
 
+## 2026-11-21 17:32:17 | agent-1 | P2-3 | REVIEW
+**What:** Real events now flow Pi to laptop; fixed loss caused by a reused test database
+**Notes:** Someone (likely agent-2) is sending real events to /pod_events. The laptop API was still on my test DB where pod-01 was already acked to 45, so the server treated real seq 1 as a duplicate and uplink advanced to 45: event silently not stored. Restarted the API on a fresh DB, reset the Pi uplink cursor, 3 events now stored. Known edge for all: if pod-data on the Pi is wiped (seq restarts at 1) but the ground DB keeps the old pod-01, new events are dropped as duplicates. Rule: never wipe pod-data without also using a fresh ground DB or a new pod_id. TODO agent-1: uplink should warn when the server acked_seq is above the Pod's own last seq.
+
