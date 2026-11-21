@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://thepod.local/shared/event_schema.json",
+  "title": "The Pod: Pod -> ground station JSON contract",
+  "description": "v1 (DRAFT, pending P0-4 sign-off by all four agents). JSON form of shared/pod_msgs.h v1 as sent by pod-uplink to the ground station. Field names match pod_event_t and pod_heartbeat_t exactly; additions are marked 'JSON only'. Changes go through the contract change process in AGENTS.md section 6. Conventions: all times are Unix wall-clock milliseconds (*_ms); CLOCK_MONOTONIC *_ns values never leave the Pod. Unknown extra fields must be rejected by the ground station (additionalProperties false) so typos surface immediately. PRIVACY: there is no person species; the ground station rejects 'person'.",
+  "x-version": 1,
+
+  "$defs": {
+    "pod_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,14}$",
+      "description": "Matches pod_event_t.pod_id (POD_ID_LEN 16 incl. NUL, so at most 15 chars). Example: 'pod-01'."
+    },
+    "unix_ms": {
+      "type": "integer",
+      "minimum": 1600000000000,
+      "description": "Unix wall-clock milliseconds."
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Per-pod counter, starts at 1, +1 per record, never reused."
+    },
+
+    "visit_event": {
+      "type": "object",
+      "description": "One animal visit. JSON form of pod_event_t. (pod_id, seq) is the idempotency key: the ground station stores the first copy and ignores repeats.",
+      "additionalProperties": false,
+      "required": ["pod_id", "seq", "t_start_ms", "t_end_ms", "class_id", "species", "max_score", "track_id", "n_frames"],
+      "properties": {
+        "pod_id":     { "$ref": "#/$defs/pod_id" },
+        "seq":        { "$ref": "#/$defs/seq" },
+        "t_start_ms": { "$ref": "#/$defs/unix_ms" },
+        "t_end_ms":   { "$ref": "#/$defs/unix_ms", "description": "Must be >= t_start_ms (checked by the ground station)." },
+        "class_id":   { "type": "integer", "minimum": 0, "maximum": 65535, "description": "From the model label table in models/ (agent-2). 0 = unknown." },
+        "species":    {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z][a-z_]*$",
+          "not": { "const": "person" },
+          "description": "JSON only. Lower-case label for class_id, filled in by pod-uplink from the label table so the ground station never needs it. 'unknown' for class_id 0."
+        },
+        "max_score":  { "type": "number", "minimum": 0, "maximum": 1 },
+        "track_id":   { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "n_frames":   { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+        "thumb_path": {
+          "type": "string",
+          "maxLength": 63,
+          "description": "Optional. Thumbnail file name relative to the Pod log dir; omit if none (C side: empty string). Thumbnail bytes are not sent in v1."
+        },
+        "lat":        { "type": "number", "minimum": -90,  "maximum": 90,  "description": "JSON only, optional (mobile mode)." },
+        "lon":        { "type": "number", "minimum": -180, "maximum": 180, "description": "JSON only, optional (mobile mode)." },
+        "loc_source": { "enum": ["gps", "simulated"], "description": "JSON only, required whenever lat/lon are present. The dashboard labels 'simulated' openly." }
+      },
+      "dependentRequired": {
+        "lat": ["lon", "loc_source"],
+        "lon": ["lat", "loc_source"],
+        "loc_source": ["lat", "lon"]
+      }
+    },
+
+    "heartbeat": {
+      "type": "object",
+      "description": "Pod health, sent about every 10 s. JSON form of pod_heartbeat_t. The dashboard health panel reads only this.",
+      "additionalProperties": false,
+      "required": ["pod_id", "seq", "t_wall_ms", "infer_p50_ms", "infer_p99_ms", "e2e_p50_ms", "e2e_p99_ms", "temp_c", "disk_free_mb", "restarts", "queue_depth", "last_ack_seq"],
+      "properties": {
+        "pod_id":       { "$ref": "#/$defs/pod_id" },
+        "seq":          { "$ref": "#/$defs/seq" },
+        "t_wall_ms":    { "$ref": "#/$defs/unix_ms" },
+        "infer_p50_ms": { "type": "number", "minimum": 0 },
+        "infer_p99_ms": { "type": "number", "minimum": 0 },
+        "e2e_p50_ms":   { "type": "number", "minimum": 0, "description": "Capture-to-detection latency." },
+        "e2e_p99_ms":   { "type": "number", "minimum": 0 },
+        "temp_c":       { "type": "number", "minimum": -40, "maximum": 125 },
+        "disk_free_mb": { "type": "integer", "minimum": 0 },
+        "restarts":     { "type": "integer", "minimum": 0, "description": "Supervisor-triggered restarts since boot." },
+        "queue_depth":  { "type": "integer", "minimum": 0, "description": "Events logged but not yet acked." },
+        "last_ack_seq": { "type": "integer", "minimum": 0, "description": "Highest event seq the Pod has seen acked. 0 = none yet." }
+      }
+    },
+
+    "event_batch": {
+      "type": "object",
+      "description": "Body of POST /api/events. Up to 50 events from ONE pod, in ascending seq order (gaps allowed; a gap just means those events come in a later batch).",
+      "additionalProperties": false,
+      "required": ["pod_id", "events"],
+      "properties": {
+        "pod_id": { "$ref": "#/$defs/pod_id", "description": "Must equal pod_id inside every event." },
+        "events": { "type": "array", "minItems": 1, "maxItems": 50, "items": { "$ref": "#/$defs/visit_event" } }
+      }
+    },
+
+    "event_ack": {
+      "type": "object",
+      "description": "Response of POST /api/events (HTTP 200). acked_seq is the highest seq S such that the ground station holds EVERY event 1..S for this pod (highest contiguous, not highest seen), so an event lost mid-batch is never skipped. pod-uplink advances its cursor to acked_seq and resends anything after it. A 4xx means the batch was malformed and nothing in it was stored.",
+      "additionalProperties": false,
+      "required": ["pod_id", "acked_seq", "stored", "duplicates"],
+      "properties": {
+        "pod_id":     { "$ref": "#/$defs/pod_id" },
+        "acked_seq":  { "type": "integer", "minimum": 0 },
+        "stored":     { "type": "integer", "minimum": 0, "description": "New events stored from this batch." },
+        "duplicates": { "type": "integer", "minimum": 0, "description": "Events already held and ignored." }
+      }
+    },
+
+    "heartbeat_ack": {
+      "type": "object",
+      "description": "Response of POST /api/heartbeat (HTTP 200). Body of the request is one heartbeat object. Also returns acked_seq so the Pod can resync its cursor after a reboot without sending events.",
+      "additionalProperties": false,
+      "required": ["pod_id", "acked_seq"],
+      "properties": {
+        "pod_id":    { "$ref": "#/$defs/pod_id" },
+        "acked_seq": { "type": "integer", "minimum": 0 }
+      }
+    }
+  },
+
+  "examples": [
+    {
+      "event_batch": {
+        "pod_id": "pod-01",
+        "events": [
+          { "pod_id": "pod-01", "seq": 41, "t_start_ms": 1795283000000, "t_end_ms": 1795283008500, "class_id": 19, "species": "sheep", "max_score": 0.87, "track_id": 12, "n_frames": 61, "thumb_path": "20261121/000041.jpg" },
+          { "pod_id": "pod-01", "seq": 42, "t_start_ms": 1795283020000, "t_end_ms": 1795283023100, "class_id": 15, "species": "bird", "max_score": 0.64, "track_id": 13, "n_frames": 18, "lat": 43.0096, "lon": -81.2737, "loc_source": "simulated" }
+        ]
+      },
+      "event_ack": { "pod_id": "pod-01", "acked_seq": 42, "stored": 2, "duplicates": 0 },
+      "heartbeat": { "pod_id": "pod-01", "seq": 300, "t_wall_ms": 1795283030000, "infer_p50_ms": 92.4, "infer_p99_ms": 141.0, "e2e_p50_ms": 101.7, "e2e_p99_ms": 152.3, "temp_c": 61.5, "disk_free_mb": 24120, "restarts": 1, "queue_depth": 0, "last_ack_seq": 42 },
+      "heartbeat_ack": { "pod_id": "pod-01", "acked_seq": 42 }
+    }
+  ]
+}

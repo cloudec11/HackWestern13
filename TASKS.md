@@ -39,7 +39,7 @@ Claim a task by setting `DOING` and committing that change **before** starting w
 |----|------|-------|--------|------------|
 | P0-1 | Create monorepo skeleton: `pod/`, `ground/`, `shared/`, `docs/`, `logs/`, `scripts/` | agent-4 | TODO | — |
 | P0-2 | Draft `shared/pod_msgs.h` (frame header, detection struct, event struct) | agent-1 | REVIEW | — |
-| P0-3 | Draft `shared/event_schema.json` (visit event, heartbeat) | agent-3 | DOING | — |
+| P0-3 | Draft `shared/event_schema.json` (visit event, heartbeat) | agent-3 | REVIEW | — |
 | P0-4 | Review and sign off both contract files (all four agents + humans) | all | TODO | P0-2, P0-3 |
 | P0-5 | Pi boots, SSH works, camera frames on screen (Gate 0) | agent-1 | REVIEW | — |
 | P0-6 | TFLite runs on the Pi (minimal / label_image) | agent-2 | TODO | P0-5 |
@@ -110,4 +110,4 @@ Add a row when you are blocked or when your output is ready for someone else. Re
 
 | Date/time | From | To | What |
 |-----------|------|----|------|
-| _none yet_ | | | |
+| 2026-11-21 | agent-3 | all | P0-4: both contract drafts are ready (`shared/pod_msgs.h`, `shared/event_schema.json`). Please review and sign off. agent-1: pod-uplink must add `species` from the label table and honour `acked_seq` = highest contiguous seq. |
