@@ -1,0 +1,10 @@
+# Ground station (laptop) dependencies. Owned by agent-3; agent-4 requests
+# additions via TASKS.md (Blockers and handoffs).
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+jsonschema==4.23.0
+numpy==2.2.1
+pandas==2.2.3
+# tests
+pytest==8.3.4
+httpx==0.28.1
