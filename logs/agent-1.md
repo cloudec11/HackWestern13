@@ -58,3 +58,11 @@ Append-only. Written by agent-1 only.
 **Files:** `pod/capture/main.cpp`, `pod/capture/capture_check.cpp`, `pod/capture/CMakeLists.txt`
 **Notes:** Measured on Pi 5 (22 s run, camera thread SCHED_FIFO 30, agent-2 TFLite build may have been loading the CPU): 640x480 YUYV at 15-16 fps, 0 bad frames, 0 no-slot, copy into ring p50 0.3 ms p99 0.5 ms; capture->consumer latency p50 0.48 ms, p99 3.19 ms, max 48 ms (single outlier, not yet explained). capture_check: 230 frames in 15 s, 0 skipped, 0 bad headers. Frame rate is lower than the ~28 fps seen with cam_probe earlier; cause not yet known (CPU load from the TFLite build, or the C270 lowering fps in dim light). Still above the 5/s Gate 1 target. Build: cmake -S pod/capture -B build/capture && cmake --build build/capture (export CMAKE_POLICY_VERSION_MINIMUM=3.5). Handoff row for agent-2 added to TASKS.md.
 
+## 2026-11-21 16:17:20 | agent-1 | P0-5 | DONE
+**What:** P0-5 DONE: webcam frames proven on the Pi
+**Notes:** Evidence: cam_probe decoded a real 640x480 colour snapshot (viewed, then deleted as it showed a person), pod-capture delivers 15-16 fps into the ring. Display-free by design (sensor_pod.conf), which is what the field Pod needs.
+
+## 2026-11-21 16:17:21 | agent-1 | P2-3 | DOING
+**What:** Starting P2-3 pod-uplink early (human decision): its deps P1-3 (REVIEW) and P2-2 (TODO) are not DONE
+**Notes:** Building against agent-3's stdlib ground API (ground/README.md) and a fake events file in the JSONL format pod-log (P2-2, also mine) will write. Python stdlib only, so it runs on the Pi.
+

@@ -41,7 +41,7 @@ Claim a task by setting `DOING` and committing that change **before** starting w
 | P0-2 | Draft `shared/pod_msgs.h` (frame header, detection struct, event struct) | agent-1 | DONE | — |
 | P0-3 | Draft `shared/event_schema.json` (visit event, heartbeat) | agent-3 | DONE | — |
 | P0-4 | Review and sign off both contract files (all four agents + humans) | all | DONE | P0-2, P0-3 |
-| P0-5 | Pi boots, SSH works, camera frames on screen (Gate 0) | agent-1 | REVIEW | — |
+| P0-5 | Pi boots, SSH works, camera frames on screen (Gate 0) | agent-1 | DONE | — |
 | P0-6 | TFLite runs on the Pi (minimal / label_image) | agent-2 | DOING | P0-5 |
 | P0-7 | Network plan: laptop + Pi on same subnet, Ethernet fallback with static IP | agent-1 | REVIEW | — |
 
@@ -65,7 +65,7 @@ Claim a task by setting `DOING` and committing that change **before** starting w
 |----|------|-------|--------|------------|
 | P2-1 | `pod-track`: IoU tracker, one visit event per animal visit | agent-2 | TODO | P1-2 |
 | P2-2 | `pod-log`: JSONL with seq numbers + thumbnails, rotation | agent-1 | TODO | P0-4, P2-1 |
-| P2-3 | `pod-uplink`: store-and-forward, cursor advances on ack only | agent-1 | TODO | P1-3, P2-2 |
+| P2-3 | `pod-uplink`: store-and-forward, cursor advances on ack only | agent-1 | DOING | P1-3, P2-2 |
 | P2-4 | Density estimate (Random Encounter Model) from real events | agent-3 | TODO | P1-3 |
 | P2-5 | Ricker Monte Carlo simulation (notebook, then `simulate.py`) | agent-3 | TODO | P2-4 |
 | P2-6 | Dashboard: live feed + Pod health panel on real data | agent-4 | TODO | P1-5, P2-3 |
