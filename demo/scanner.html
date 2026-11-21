@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pod animal scanner</title>
+<style>
+  :root { --bg: #0e1217; --card: #171d25; --line: #2a3340; --text: #eef2f6; --muted: #9aa8b5; --ok: #3ddc84; --accent: #6cb6ff; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .wrap { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; padding: 16px; height: 100vh; }
+  @media (max-width: 900px) { .wrap { grid-template-columns: 1fr; height: auto; } }
+  .cam { position: relative; background: #000; border-radius: 14px; overflow: hidden; display: flex; align-items: center; justify-content: center; min-height: 300px; }
+  .cam img { width: 100%; height: 100%; object-fit: contain; }
+  .side { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .seeing { font-size: 22px; font-weight: 650; margin: 6px 0 8px; text-transform: capitalize; }
+  .bar { height: 10px; background: #0b0f14; border-radius: 99px; overflow: hidden; border: 1px solid var(--line); }
+  .bar > div { height: 100%; width: 0; background: var(--accent); transition: width .15s; }
+  .guesses { margin-top: 10px; font-size: 13px; color: var(--muted); }
+  .guesses span { display: inline-block; margin-right: 10px; text-transform: capitalize; }
+  .list { overflow-y: auto; flex: 1; min-height: 120px; }
+  .list .item { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-top: 1px solid var(--line); text-transform: capitalize; }
+  .list .item:first-child { border-top: 0; }
+  .list img { width: 44px; height: 44px; object-fit: contain; background: #0b0f14; border-radius: 8px; }
+  .list .n { margin-left: auto; color: var(--muted); }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  button, .btn { font: inherit; color: var(--text); background: #222b36; border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; cursor: pointer; text-decoration: none; }
+  button:hover, .btn:hover { background: #2a3442; }
+  #sound.on { border-color: var(--ok); color: var(--ok); }
+  /* "added" overlay on the camera */
+  #added { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(8, 20, 12, 0.55); opacity: 0; pointer-events: none; transition: opacity .25s; }
+  #added.show { opacity: 1; }
+  #added .box { background: var(--card); border: 2px solid var(--ok); border-radius: 18px; padding: 18px 22px; text-align: center; max-width: 90%; transform: scale(.9); transition: transform .25s; }
+  #added.show .box { transform: scale(1); }
+  #added img { max-width: 220px; max-height: 200px; display: block; margin: 0 auto 10px;
+    background: repeating-conic-gradient(#202833 0 25%, #1a212a 0 50%) 0 0 / 16px 16px; border-radius: 10px; }
+  #added .t1 { font-size: 24px; font-weight: 700; color: var(--ok); text-transform: capitalize; }
+  #added .t2 { margin-top: 4px; color: var(--muted); }
+  #flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
+  #flash.go { animation: flash .35s ease-out; }
+  @keyframes flash { from { opacity: .7; } to { opacity: 0; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="cam">
+    <img src="/stream.mjpg" alt="Camera view">
+    <div id="flash"></div>
+    <div id="added"><div class="box">
+      <img id="added-img" alt="">
+      <div class="t1" id="added-t1"></div>
+      <div class="t2">Added to the simulation. Show me a different animal.</div>
+    </div></div>
+  </div>
+
+  <div class="side">
+    <div class="card">
+      <h1>Animal scanner</h1>
+      <div class="muted" id="hint">Hold an animal picture or plushie in front of the camera.</div>
+      <div class="seeing" id="seeing">Looking…</div>
+      <div class="bar"><div id="bar"></div></div>
+      <div class="guesses" id="guesses"></div>
+    </div>
+
+    <div class="card list" id="list"><div class="muted">Nothing added yet.</div></div>
+
+    <div class="card row">
+      <button id="sound">Enable sound</button>
+      <button id="reset">Reset</button>
+      <a class="btn" href="http://localhost:8080/?scene=live_scene.json&refresh=2" target="_blank" rel="noopener">Open habitat</a>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var audio = null;
+  var $sound = document.getElementById('sound');
+  // Browsers only allow sound after a click on the page.
+  function enableSound() {
+    if (!audio) { try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; } }
+    audio.resume();
+    $sound.textContent = 'Sound on'; $sound.classList.add('on');
+  }
+  $sound.onclick = function () { enableSound(); beep(); };
+  document.addEventListener('click', enableSound, { once: true });
+
+  function tone(freq, start, len) {
+    var o = audio.createOscillator(), g = audio.createGain();
+    o.type = 'sine'; o.frequency.value = freq;
+    g.gain.setValueAtTime(0.0001, start);
+    g.gain.exponentialRampToValueAtTime(0.3, start + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, start + len);
+    o.connect(g); g.connect(audio.destination);
+    o.start(start); o.stop(start + len + 0.05);
+  }
+  function beep() {
+    if (!audio) return;
+    var t = audio.currentTime;
+    tone(880, t, 0.16); tone(1320, t + 0.14, 0.28);
+  }
+
+  document.getElementById('reset').onclick = function () { fetch('/reset', { method: 'POST' }); };
+
+  var nice = function (s) { return String(s).replace(/_/g, ' '); };
+  var $seeing = document.getElementById('seeing'), $bar = document.getElementById('bar');
+  var $guesses = document.getElementById('guesses'), $hint = document.getElementById('hint');
+  var $added = document.getElementById('added'), $flash = document.getElementById('flash');
+  var $list = document.getElementById('list');
+  var latest = {}, hideTimer = null;
+
+  var es = new EventSource('/events');
+  es.addEventListener('status', function (e) {
+    var s = JSON.parse(e.data);
+    if (s.locked && s.species === s.locked) {
+      $seeing.textContent = nice(s.locked) + ' ✓';
+      $hint.textContent = 'Already added. Show me a different animal.';
+      $bar.style.width = '100%'; $bar.style.background = 'var(--ok)';
+    } else if (s.species) {
+      $seeing.textContent = nice(s.species) + '?';
+      $hint.textContent = 'Hold it steady…';
+      $bar.style.width = Math.min(100, 100 * s.votes / s.need) + '%'; $bar.style.background = 'var(--accent)';
+    } else {
+      $seeing.textContent = 'Looking…';
+      $hint.textContent = 'Hold an animal picture or plushie in front of the camera.';
+      $bar.style.width = '0'; $bar.style.background = 'var(--accent)';
+    }
+    $guesses.innerHTML = '';
+    (s.top3 || []).forEach(function (g) {
+      var span = document.createElement('span');
+      span.textContent = nice(g[0]) + ' ' + Math.round(g[1] * 100) + '%';
+      $guesses.appendChild(span);
+    });
+  });
+
+  es.addEventListener('capture', function (e) {
+    var ev = JSON.parse(e.data);
+    if (ev.reset) { latest = {}; renderList({}); return; }
+    latest[ev.species] = ev.image;
+    renderList(ev.counts);
+    document.getElementById('added-img').src = ev.image;
+    document.getElementById('added-t1').textContent = nice(ev.species) + ' (' + Math.round(ev.prob * 100) + '%)';
+    $flash.classList.remove('go'); void $flash.offsetWidth; $flash.classList.add('go');
+    $added.classList.add('show');
+    beep();
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(function () { $added.classList.remove('show'); }, 2600);
+  });
+
+  function renderList(counts) {
+    var names = Object.keys(counts || {});
+    $list.innerHTML = '';
+    if (!names.length) { $list.innerHTML = '<div class="muted">Nothing added yet.</div>'; return; }
+    names.sort(function (a, b) { return counts[b] - counts[a]; }).forEach(function (n) {
+      var row = document.createElement('div'); row.className = 'item';
+      var img = document.createElement('img'); img.src = latest[n] || ''; img.alt = '';
+      var name = document.createElement('span'); name.textContent = nice(n);
+      var c = document.createElement('span'); c.className = 'n'; c.textContent = '×' + counts[n];
+      row.appendChild(img); row.appendChild(name); row.appendChild(c); $list.appendChild(row);
+    });
+  }
+})();
+</script>
+</body>
+</html>
