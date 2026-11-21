@@ -10,3 +10,6 @@ Append-only. Written by agent-1 only.
 **What:** Gate 0 partly met: QNX camera API delivers live frames from USB webcam as camera unit 5
 **Notes:** SSH works. Run: camera_example1_callback -u 5 (callback API, libcamapi). Unit 5 = Logitech C270 (live: channel avgs ~140,129,127, varies per frame). Units 1 and 2 return constant frames (likely CSI ports, no sensor attached). Per-frame callback work ~5 ms. NOT yet verified: frames displayed on a monitor (camera_example3_viewfinder) and fps. P1-1 should open unit 5 via camera_open + callback.
 
+## 2026-11-21 14:16:29 | agent-1 | P0-2 | DOING
+**What:** Claiming P0-2: drafting shared/pod_msgs.h (draft only, needs P0-4 sign-off)
+
