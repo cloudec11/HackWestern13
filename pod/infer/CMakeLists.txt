@@ -13,7 +13,7 @@ endif()
 add_compile_options(-Wall -Wextra)
 
 set(POD_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
-include_directories(${POD_ROOT}/shared ${POD_ROOT}/pod/ipc ${CMAKE_CURRENT_SOURCE_DIR})
+include_directories(${POD_ROOT}/shared ${POD_ROOT}/pod/ipc ${POD_ROOT}/pod/track ${CMAKE_CURRENT_SOURCE_DIR})
 
 add_executable(infer_test infer_test.cpp)
 

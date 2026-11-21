@@ -3,14 +3,15 @@
  *
  *   pod-infer [--model models/efficientdet_lite0.tflite] [--labels models/labels.csv]
  *             [--shm /pod_frames] [--threads 3] [--prio 0] [--min-score 0.4]
- *             [--seconds 0] [--stats 5] [--quiet]
+ *             [--dets-mq /pod_dets] [--seconds 0] [--stats 5] [--quiet]
  *   pod-infer --ppm image.ppm [--model ...] [--labels ...]     one still image, then exit
  *
  * Needs I/O privilege on QNX (run as root): XNNPACK's cpuinfo reads a privileged CPU register.
  *
  * Per frame: wait for the newest frame in the shm ring (pod-capture), convert YUYV straight
  * into the model input, release the ring slot, run the model, keep only classes in the label
- * table (person is never in it), fill a pod_detections_t. Prints one line per frame with
+ * table (person is never in it), fill a pod_detections_t and send it to pod-track over
+ * --dets-mq (every frame, non-blocking; "" = don't send). Prints one line per frame with
  * detections (unless --quiet) and a latency summary every --stats seconds:
  *   pre   = ring acquire -> model input ready
  *   infer = model run (Invoke)
@@ -35,6 +36,7 @@
 #include "tensorflow/lite/kernels/register.h"
 #include "tensorflow/lite/model.h"
 
+#include "dets_mq.h"
 #include "health.h"
 #include "labels.h"
 #include "pod_msgs.h"
@@ -56,6 +58,7 @@ struct Options {
     std::string model = "models/efficientdet_lite0.tflite";
     std::string labels = "models/labels.csv";
     std::string shm = "/pod_frames";
+    std::string dets_mq = pod::kDetsMq;
     std::string ppm;
     int threads = 3;
     int prio = 0;
@@ -73,6 +76,7 @@ bool parse(int argc, char** argv, Options& o) {
         if (a == "--model" && (v = next())) o.model = v;
         else if (a == "--labels" && (v = next())) o.labels = v;
         else if (a == "--shm" && (v = next())) o.shm = v;
+        else if (a == "--dets-mq" && (v = next())) o.dets_mq = v;
         else if (a == "--ppm" && (v = next())) o.ppm = v;
         else if (a == "--threads" && (v = next())) o.threads = std::atoi(v);
         else if (a == "--prio" && (v = next())) o.prio = std::atoi(v);
@@ -82,7 +86,7 @@ bool parse(int argc, char** argv, Options& o) {
         else if (a == "--quiet") o.quiet = true;
         else {
             std::fprintf(stderr,
-                "usage: pod-infer [--model F] [--labels F] [--shm NAME] [--threads N] [--prio N]\n"
+                "usage: pod-infer [--model F] [--labels F] [--shm NAME] [--dets-mq NAME] [--threads N] [--prio N]\n"
                 "                 [--min-score S] [--seconds N] [--stats N] [--quiet] [--ppm IMAGE]\n");
             return false;
         }
@@ -100,18 +104,19 @@ double pct_ms(std::vector<int64_t> v, double p) {
 
 struct Window {
     std::vector<int64_t> pre, infer, e2e;
-    uint64_t frames = 0, skipped = 0, dets = 0;
-    void clear() { pre.clear(); infer.clear(); e2e.clear(); frames = skipped = dets = 0; }
+    uint64_t frames = 0, skipped = 0, dets = 0, unsent = 0;
+    void clear() { pre.clear(); infer.clear(); e2e.clear(); frames = skipped = dets = unsent = 0; }
 };
 
 void print_stats(const char* tag, const Window& w, double secs) {
-    std::printf("pod-infer: %s %.1f s: %llu frames (%.1f/s), skipped %llu, detections %llu\n"
+    std::printf("pod-infer: %s %.1f s: %llu frames (%.1f/s), skipped %llu, detections %llu, not sent to track %llu\n"
                 "pod-infer:   pre   p50 %6.2f  p99 %6.2f  max %6.2f ms\n"
                 "pod-infer:   infer p50 %6.2f  p99 %6.2f  max %6.2f ms\n"
                 "pod-infer:   e2e   p50 %6.2f  p99 %6.2f  max %6.2f ms\n",
                 tag, secs, static_cast<unsigned long long>(w.frames),
                 secs > 0 ? static_cast<double>(w.frames) / secs : 0.0,
                 static_cast<unsigned long long>(w.skipped), static_cast<unsigned long long>(w.dets),
+                static_cast<unsigned long long>(w.unsent),
                 pct_ms(w.pre, 0.5), pct_ms(w.pre, 0.99), pct_ms(w.pre, 1.0),
                 pct_ms(w.infer, 0.5), pct_ms(w.infer, 0.99), pct_ms(w.infer, 1.0),
                 pct_ms(w.e2e, 0.5), pct_ms(w.e2e, 0.99), pct_ms(w.e2e, 1.0));
@@ -303,9 +308,12 @@ int main(int argc, char** argv) {
     if (!o.ppm.empty()) return run_ppm(o, det, labels);
 
     pod::HealthBeat hb;
+    pod::DetsSender tx(o.dets_mq.c_str());
+    const bool send_dets = !o.dets_mq.empty();
     pod::ShmRing ring;
     if (!open_ring(ring, o.shm, 50)) { std::fprintf(stderr, "pod-infer: cannot open ring %s (is pod-capture running?)\n", o.shm.c_str()); return 1; }
-    std::printf("pod-infer: reading %s, min score %.2f, prio %d%s\n", o.shm.c_str(), static_cast<double>(o.min_score),
+    std::printf("pod-infer: reading %s, sending to %s, min score %.2f, prio %d%s\n", o.shm.c_str(),
+                send_dets ? o.dets_mq.c_str() : "(nothing)", static_cast<double>(o.min_score),
                 o.prio, hb.attached() ? ", supervised" : "");
     std::fflush(stdout);
 
@@ -340,6 +348,7 @@ int main(int argc, char** argv) {
         if (!det.invoke()) { std::fprintf(stderr, "pod-infer: Invoke failed\n"); return 1; }
         r.t_infer_done_ns = mono_ns();
         det.collect(labels, o.min_score, &r);
+        const bool unsent = send_dets && !tx.send(r);   /* every frame, even with 0 detections */
         hb.beat();
         t_last_frame = r.t_infer_done_ns;
 
@@ -350,6 +359,7 @@ int main(int argc, char** argv) {
             w->frames++;
             w->skipped += skipped;
             w->dets += r.n_detections;
+            w->unsent += unsent ? 1 : 0;
         }
         if (!o.quiet && r.n_detections > 0) print_dets(r, labels);
 

@@ -40,3 +40,8 @@ Append-only. Written by agent-2 only.
 ## 2026-11-21 17:07:45 | agent-2 | P2-1 | DOING
 **What:** Claiming P2-1: pod-track (IoU tracker, one visit event per animal visit)
 
+## 2026-11-21 17:14:28 | agent-2 | P2-1 | DONE
+**What:** pod-track: IoU tracker turns per-frame detections into one visit event per animal, sent to pod-log over /pod_events. Unit and end-to-end tests pass on the Pi
+**Files:** `pod/track/tracker.h`, `pod/track/dets_mq.h`, `pod/track/main.cpp`, `pod/track/track_test.cpp`, `pod/track/track_e2e.cpp`, `pod/track/CMakeLists.txt`, `pod/track/README.md`, `pod/infer/main.cpp`, `pod/infer/CMakeLists.txt`, `pod/infer/README.md`, `TASKS.md`
+**Notes:** New queue /pod_dets (pod/track/dets_mq.h, my lane): pod-infer sends every frame's pod_detections_t non-blocking; pod-track creates it and never unlinks it. Tracker: greedy IoU >= 0.3, class ignored when matching, species = score-weighted vote, visit ends after 2 s unseen, < 3 frames discarded, open visits flushed on SIGTERM, up to 256 unsent events retried. --max-visit N splits long stays; off by default because splitting inflates REM encounter counts (static plush toys then give no event until removed; use --max-visit 30 for the demo if needed). Events: t_start_ms/t_end_ms Unix ms from capture times, seq/pod_id 0 for pod-log, thumb_path empty (no thumbnails yet). Tests on the Pi: track_test all passed; track_e2e PASS over private queues /a2_test_* (cat 30 frames + bird 31 frames, dog flicker ignored); live camera -> pod-infer -> pod-track 177/177 frames delivered in 12 s, 14.7 frames/s. Not yet: a real animal in front of the camera, and running under the supervisor (handoff row to agent-1 updated with pod.conf lines). Removed agent-1's P2-1 row (used).
+

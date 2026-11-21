@@ -20,6 +20,7 @@ Start `pod-capture` first. `pod-infer` waits up to 5 s for the ring `/pod_frames
 | `--model` | `models/efficientdet_lite0.tflite` | Detector. Must end in `TFLite_Detection_PostProcess`. |
 | `--labels` | `models/labels.csv` | Label table |
 | `--shm` | `/pod_frames` | Frame ring name |
+| `--dets-mq` | `/pod_dets` | Queue to pod-track (`""` = don't send) |
 | `--threads` | 3 | Inference threads. 4 is much slower on the Pi. |
 | `--prio` | 0 | SCHED_FIFO priority (0 = leave as is). Inference threads inherit it. |
 | `--min-score` | 0.4 | Drop detections below this score |
@@ -35,7 +36,7 @@ Start `pod-capture` first. `pod-infer` waits up to 5 s for the ring `/pod_frames
 4. Fill a `pod_detections_t` (`shared/pod_msgs.h`) with `t_capture_ns` from the frame and `t_infer_done_ns`, and call `HealthBeat::beat()` for the supervisor.
 5. If no frame arrives for 2 s, reopen the ring (pod-capture may have restarted).
 
-Output is printed for now. Handing detections to `pod-track` comes in P2-1.
+Every frame's `pod_detections_t` (including frames with no detections) is sent to `pod-track` over the POSIX queue `--dets-mq` (default `/pod_dets`, see `pod/track/dets_mq.h`). The send never blocks: if pod-track is slow or not running, the frame is dropped and counted as "not sent to track" in the stats.
 
 ## Measured (2026-11-21, live camera, idle Pi, EfficientDet-Lite0, 3 threads)
 
