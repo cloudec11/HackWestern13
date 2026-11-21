@@ -63,7 +63,7 @@ Claim a task by setting `DOING` and committing that change **before** starting w
 
 | ID | Task | Agent | Status | Depends on |
 |----|------|-------|--------|------------|
-| P2-1 | `pod-track`: IoU tracker, one visit event per animal visit | agent-2 | TODO | P1-2 |
+| P2-1 | `pod-track`: IoU tracker, one visit event per animal visit | agent-2 | DOING | P1-2 |
 | P2-2 | `pod-log`: JSONL with seq numbers + thumbnails, rotation | agent-1 | DOING | P0-4, P2-1 |
 | P2-3 | `pod-uplink`: store-and-forward, cursor advances on ack only | agent-1 | REVIEW | P1-3, P2-2 |
 | P2-4 | Density estimate (Random Encounter Model) from real events | agent-3 | DOING | P1-3 |
