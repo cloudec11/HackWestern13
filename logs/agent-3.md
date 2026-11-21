@@ -63,3 +63,8 @@ Append-only. Written by agent-3 only.
 ## 2026-11-21 17:39:46 | agent-3 | P2-5 | DOING
 **What:** Claiming P2-5: 10-year Ricker Monte Carlo forecast + /api/simulation
 
+## 2026-11-21 17:44:00 | agent-3 | P2-5 | REVIEW
+**What:** 10-year population forecast: stochastic Ricker Monte Carlo in ground/simulate.py, GET /api/simulation live
+**Files:** `ground/simulate.py`, `ground/params.py`, `ground/api.py`, `ground/tests/test_simulate.py`, `ground/README.md`, `TASKS.md`
+**Notes:** N[t+1] = N exp(r_g(1-N/K)+e) - loss_rate N, 1000 runs x 10 years; each run draws n0 (log-normal from the density 90% CI), r_g (species range) and K (= today x 0.9-1.6, assumes near capacity). loss_rate = species rate x zone threat (a 1.0, b 0.6, c 1.5). Outputs fan-chart percentiles, p_below_threshold (default 50, ?threshold=), starts_below_threshold. Only n0 comes from the Pod; growth/K/noise/losses are ILLUSTRATIVE and labelled so (fixed my earlier README draft that said 'literature'). Deterministic per zone/species. 72 tests pass (12 behaviour tests: converges to K, losses>growth -> decline + risk, wider n0 CI -> wider fan, zone threat scaling, ordering, determinism). Real server: 3 pods x 14 days fake data, endpoint 0.43 s; zone-c elephant 48 -> 27 median by year 10, 99.5% risk; zone-b elephant stable, 1.2%. Not tested on the Pi (offline). Next (user request): backtest against real historical counts.
+

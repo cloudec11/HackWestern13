@@ -54,6 +54,34 @@ ZONES = [
 ]
 UNASSIGNED_ZONE = {"zone_id": "unassigned", "name": "Unassigned Pods", "area_km2": 1.0, "biome": "savanna"}
 
+# ---- Population forecast (Ricker model, ground/simulate.py) ----
+# Per species, ranges that each Monte Carlo run draws from (uniformly):
+#   r_g        intrinsic growth rate per year (how fast it grows with room to spare)
+#   sigma      year-to-year environmental noise on the log scale (good and bad years)
+#   loss_rate  fraction of the population lost to threats each year (poaching, roads)
+# Long-lived, slow breeders (elephant, bear) get low r_g. ALL ILLUSTRATIVE.
+GROWTH = {
+    "elephant": {"r_g": (0.04, 0.07), "sigma": 0.08, "loss_rate": 0.05},
+    "bear":     {"r_g": (0.03, 0.08), "sigma": 0.10, "loss_rate": 0.04},
+    "giraffe":  {"r_g": (0.08, 0.15), "sigma": 0.12, "loss_rate": 0.04},
+    "zebra":    {"r_g": (0.10, 0.20), "sigma": 0.15, "loss_rate": 0.04},
+    "horse":    {"r_g": (0.10, 0.20), "sigma": 0.15, "loss_rate": 0.03},
+    "cow":      {"r_g": (0.15, 0.30), "sigma": 0.15, "loss_rate": 0.03},
+    "sheep":    {"r_g": (0.15, 0.30), "sigma": 0.15, "loss_rate": 0.03},
+    "dog":      {"r_g": (0.20, 0.40), "sigma": 0.20, "loss_rate": 0.05},
+    "cat":      {"r_g": (0.20, 0.40), "sigma": 0.20, "loss_rate": 0.05},
+}
+# Carrying capacity K: with no habitat data, assume each zone is near capacity
+# today, so K = (today's estimate) x a factor drawn from this range. Stated
+# openly in the results; habitat restoration (P3-4) raises it.
+K_FACTOR = (0.9, 1.6)
+# Threat level per zone, multiplying every species' loss_rate (patrols lower it).
+ZONE_THREAT = {"zone-a": 1.0, "zone-b": 0.6, "zone-c": 1.5, "unassigned": 1.0}
+FORECAST_YEARS = 10
+FORECAST_RUNS = 1000
+QUASI_EXTINCTION = 50     # "at risk" if the population falls below this within the forecast
+GROWTH_SOURCE = "illustrative"
+
 # ---- Density method settings ----
 MIN_VISITS = 5            # fewer visits than this -> "insufficient_data"
 OUTAGE_GAP_MIN = 30       # a gap with no heartbeat or event longer than this = camera off

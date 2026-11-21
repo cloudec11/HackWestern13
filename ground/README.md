@@ -92,20 +92,23 @@ As built (`ground/density.py`, parameters in `ground/params.py`):
 - **Speed:** about 0.3 s on the laptop for 3 Pods × 21 days. Not yet timed on the Pi.
 - **Accuracy on fake data with known rates:** the 90% interval contained the true value in 18 of 20 independent datasets, with a mean error of 8%.
 
-### `GET /api/simulation?zone_id=&species=` (both optional)
+### `GET /api/simulation?zone_id=&species=&threshold=50` (built, P2-5)
 
 ```json
 {
   "generated_ms": 1795290000000,
   "results": [
     {
-      "zone_id": "zone-a", "species": "zebra",
+      "zone_id": "zone-c", "species": "elephant",
       "years": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-      "p5":  [15, ...], "p25": [18, ...], "p50": [21, ...], "p75": [25, ...], "p95": [31, ...],
-      "threshold": 50, "p_below_threshold": 0.12, "n_runs": 1000,
+      "p5":  [37, 33, 31, ...], "p25": [...], "p50": [48, 45, 42, ...], "p75": [...], "p95": [62, 59, 58, ...],
+      "threshold": 50, "p_below_threshold": 0.995, "starts_below_threshold": true, "n_runs": 1000,
       "params": {
-        "r_g": [0.15, 0.35], "K": [80, 160], "sigma": 0.15, "H": 2.0,
-        "source": { "n0": "pod", "r_g": "literature", "K": "literature", "sigma": "illustrative", "H": "illustrative" }
+        "n0": 48, "n0_ci": [34, 59],
+        "r_g": [0.04, 0.07], "K": [43, 77], "sigma": 0.08,
+        "loss_rate": 0.075, "H": 3.6, "zone_threat": 1.5,
+        "source": { "n0": "pod", "r_g": "illustrative", "K": "illustrative: assumes habitat near capacity today",
+                    "sigma": "illustrative", "H": "illustrative" }
       },
       "illustrative": true
     }
@@ -113,7 +116,19 @@ As built (`ground/density.py`, parameters in `ground/params.py`):
 }
 ```
 
-Each percentile array has one value per year (11 values for years 0–10). `p_below_threshold` is the share of runs that fall below `threshold` at any point within 10 years. For the dashboard's dashed line, use `threshold`. `r_g` and `K` are ranges because each run draws its own values (see Q2).
+Each percentile array has one value per year (11 values for years 0–10). `p_below_threshold` is the share of runs that fall below `threshold` in any of years 1–10. For the dashboard's dashed line, use `threshold`.
+
+As built (`ground/simulate.py`, parameters in `ground/params.py`):
+
+- **Model:** `N[t+1] = N[t]·exp(r_g·(1 − N[t]/K) + noise) − loss_rate·N[t]`, run 1,000 times.
+- **Per-run draws:** each run draws its own starting population (from the density interval), growth rate `r_g` and capacity `K`. The fan shows parameter uncertainty as well as good and bad years.
+- **Sources:** only `n0` comes from the Pod. Growth, noise and losses are **illustrative** per species, and the labels now say so. (The earlier draft said "literature", which wasn't accurate: nobody has checked these values against published studies.)
+- **Capacity:** `K` assumes each zone is near capacity today (today's estimate × 0.9–1.6), since there's no habitat data.
+- **Threats:** `loss_rate` is the species' rate × the zone's threat level (zone-a 1.0, zone-b 0.6, zone-c 1.5). Patrols in P3-4 will lower it.
+- **Not forecast:** birds (`not_applicable`) and zones without enough visits (`insufficient_data`) come back with empty arrays and a `note`.
+- **`starts_below_threshold`** is true when today's estimate is already under the threshold.
+- **Repeatable:** the same data gives the same numbers on every call, so the dashboard doesn't flicker.
+- **Speed:** about 0.4 s on the laptop for 3 zones × 5 species, density included.
 
 ### `GET /api/allocate?budget=50000`
 

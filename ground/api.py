@@ -20,6 +20,7 @@ Endpoints:
     GET  /api/zones      zones, their area and Pods
     GET  /api/density    ?zone_id=&species=   Random Encounter Model estimates (ground/density.py)
     GET  /api/scene      ?pod_id=&hours=24    scene JSON for the habitat view (ground/dashboard/sim)
+    GET  /api/simulation ?zone_id=&species=&threshold=50   10-year forecast fan chart (ground/simulate.py)
     GET  /health         liveness check
 
 Errors are JSON: {"detail": [{"path": ..., "error": ...}, ...]} with HTTP 422
@@ -43,7 +44,7 @@ from typing import Any, Callable, Iterator
 from urllib.parse import parse_qs
 from wsgiref.simple_server import WSGIRequestHandler, WSGIServer, make_server
 
-from ground import density
+from ground import density, simulate
 from ground.schema_check import load_validators
 
 HERE = Path(__file__).resolve().parent
@@ -265,7 +266,14 @@ class App:
             ("GET", "/api/zones"): self.get_zones,
             ("GET", "/api/density"): self.get_density,
             ("GET", "/api/scene"): self.get_scene,
+            ("GET", "/api/simulation"): self.get_simulation,
         }
+
+    def get_simulation(self, environ: dict, q: dict) -> dict:
+        threshold = _int_param(q, "threshold", None, 1, 100_000)
+        with self.store.conn() as c:
+            dens = density.density_results(c, _str_param(q, "zone_id"), _str_param(q, "species"))
+        return {"generated_ms": now_ms(), "results": simulate.simulation_results(dens, threshold)}
 
     def get_scene(self, environ: dict, q: dict) -> dict:
         """Scene JSON for agent-4's habitat view (ground/dashboard/sim): what one Pod

@@ -67,7 +67,7 @@ Claim a task by setting `DOING` and committing that change **before** starting w
 | P2-2 | `pod-log`: JSONL with seq numbers + thumbnails, rotation | agent-1 | DOING | P0-4, P2-1 |
 | P2-3 | `pod-uplink`: store-and-forward, cursor advances on ack only | agent-1 | REVIEW | P1-3, P2-2 |
 | P2-4 | Density estimate (Random Encounter Model) from real events | agent-3 | REVIEW | P1-3 |
-| P2-5 | Ricker Monte Carlo simulation (notebook, then `simulate.py`) | agent-3 | DOING | P2-4 |
+| P2-5 | Ricker Monte Carlo simulation (notebook, then `simulate.py`) | agent-3 | REVIEW | P2-4 |
 | P2-6 | Dashboard: live feed + Pod health panel on real data | agent-4 | TODO | P1-5, P2-3 |
 
 **Gate 2 (hour 16):** an animal in front of the camera shows on the laptop dashboard within a few seconds.
@@ -113,6 +113,7 @@ Add a row when you are blocked or when your output is ready for someone else. Re
 | 2026-11-21 | agent-3 | agent-4 | Q1 + Q2 answered: results endpoint shapes (`/api/density`, `/api/simulation`, `/api/allocate`, `/api/zones`) and the overfitting approach are in `ground/README.md` under "Results endpoints". Mostly your proposal; changes listed there. Remove this row once you have read it. |
 | 2026-11-21 | agent-3 | agent-4 | `GET /api/density` and `GET /api/zones` are live (shapes in `ground/README.md`). Two additive fields beyond the agreed shape: `not_applicable` + `note` (birds: the model doesn't apply). A species filter lists every zone, with `insufficient_data` where a zone has no visits. Remove this row once read. |
 | 2026-11-21 | agent-3 | agent-4 | `GET /api/scene` is live: your habitat view's scene JSON from real visit counts (last 24 h, per Pod), biome from the zone setting in `ground/params.py`, weather a labelled placeholder. Open `http://127.0.0.1:8080/?scene=http://127.0.0.1:8000/api/scene`. Checked in a browser with the fake Pod feeding it: renders, no console errors, counts update every 30 s. Remove this row once read. |
+| 2026-11-21 | agent-3 | agent-4 | `GET /api/simulation` is live (P2-5): fan chart p5/p25/p50/p75/p95 for years 0-10, `threshold`, `p_below_threshold`, plus `starts_below_threshold` and a fuller `params` block (shape in `ground/README.md`). `params.source` now says `illustrative` for r_g/K, not `literature`. Remove this row once read. |
 | 2026-11-21 | agent-4 | agent-2 | Q2 in `docs/OPEN_QUESTIONS.md`: overfitting. agent-2: if fine-tuning (P3-6), split train/test by clip, not frame. (agent-3 part answered in `ground/README.md`.) |
 | 2026-11-21 | agent-2 | agent-1 | Label table ready: `models/labels.csv` (`class_id,species,model_index,demo_only`). Pod ids are compact (1 bird … 10 giraffe), not the raw model indices used in the `event_schema.json` examples. Class 11 `teddy_bear` has `demo_only=1` (plush demo set). (agent-3: read; fake_pod now uses this file, and density/simulation will skip demo_only.) agent-1: pod-uplink reads `species` from this file. Remove this row once read. |
 | 2026-11-21 | agent-4 | humans, agent-1 | Q3 + Q4 in `docs/OPEN_QUESTIONS.md`: extra sensors (PIR/BME280) and the NESDR Smartee SDR. Recommendation: at most one sensor after Gate 2; SDR goes on the laptop (not ESP32) as an optional Phase 4 stretch. Scope decision for humans. |
