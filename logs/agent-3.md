@@ -99,3 +99,7 @@ Append-only. Written by agent-3 only.
 **Files:** `ground/api.py`, `ground/tests/test_api.py`, `ground/README.md`
 **Notes:** So a dashboard can show the numbers used without copying them. Includes per-species sigma_deployed (after NOISE_SCALE) and zone threat levels. Charts/graphs are agent-4's (per agent-3's human): I built a local preview page while checking the numbers, but deleted it and committed no graph code. 90 tests pass.
 
+## 2026-11-21 18:29:09 | agent-3 | - | DOING
+**What:** Starting: expected-sightings band + 'below the band' alert (GET /api/sightings) and chance of decline in the forecast
+**Notes:** Requested by agent-3's human. Additive API only, my lane.
+
