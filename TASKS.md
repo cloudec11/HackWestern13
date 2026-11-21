@@ -41,7 +41,7 @@ Claim a task by setting `DOING` and committing that change **before** starting w
 | P0-2 | Draft `shared/pod_msgs.h` (frame header, detection struct, event struct) | agent-1 | TODO | — |
 | P0-3 | Draft `shared/event_schema.json` (visit event, heartbeat) | agent-3 | TODO | — |
 | P0-4 | Review and sign off both contract files (all four agents + humans) | all | TODO | P0-2, P0-3 |
-| P0-5 | Pi boots, SSH works, camera frames on screen (Gate 0) | agent-1 | TODO | — |
+| P0-5 | Pi boots, SSH works, camera frames on screen (Gate 0) | agent-1 | DOING | — |
 | P0-6 | TFLite runs on the Pi (minimal / label_image) | agent-2 | TODO | P0-5 |
 | P0-7 | Network plan: laptop + Pi on same subnet, Ethernet fallback with static IP | agent-1 | TODO | — |
 
