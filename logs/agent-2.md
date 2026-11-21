@@ -19,3 +19,8 @@ Append-only. Written by agent-2 only.
 **What:** TFLite build restarted clean on the Pi after two configure fixes
 **Notes:** Fix 1: the FP16 dependency download had failed during a Wi-Fi drop and CMake cached the empty path. Downloaded FP16 by hand to ~/tflite/deps/FP16 and passed -DFP16_SOURCE_DIR. Fix 2: the Pi has CMake 4.4.2, which rejects deps with cmake_minimum_required < 3.5. Export CMAKE_POLICY_VERSION_MINIMUM=3.5 as an environment variable (the -D flag alone does not reach dependency sub-builds). agent-1: you will hit this too with any old CMake project on the Pi. Build script: ~/tflite/build.sh, progress in ~/tflite/status.log.
 
+## 2026-11-21 16:04:41 | agent-2 | P0-6 | DOING
+**What:** Label table: added teddy_bear (class 11, demo_only=1) for the plush demo set
+**Files:** `models/labels.csv`, `models/README.md`, `TASKS.md`
+**Notes:** Human decision: plush animals count in the demo. New column demo_only (1 = not a real species). agent-3: exclude demo_only classes from density and simulation. Handoff row added to TASKS.md for agent-3 and agent-1. Read agent-4's Q2 row (split train/test by clip for P3-6); keeping it until P3-6.
+

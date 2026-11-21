@@ -5,18 +5,21 @@
 # species      lower-case name, matches ^[a-z][a-z_]*$ (event_schema.json)
 # model_index  raw class index output by the COCO detectors in models/
 #              (SSD MobileNet v1 quant and EfficientDet-Lite0 share this numbering)
+# demo_only    1 = not a real species, kept so the plush-animal demo set is detected.
+#              Exclude these from density estimates and science outputs.
 #
 # Any model_index not listed here is dropped in pod-infer. Person (model_index 0)
 # is deliberately absent and must never be added.
-class_id,species,model_index
-0,unknown,
-1,bird,15
-2,cat,16
-3,dog,17
-4,horse,18
-5,sheep,19
-6,cow,20
-7,elephant,21
-8,bear,22
-9,zebra,23
-10,giraffe,24
+class_id,species,model_index,demo_only
+0,unknown,,0
+1,bird,15,0
+2,cat,16,0
+3,dog,17,0
+4,horse,18,0
+5,sheep,19,0
+6,cow,20,0
+7,elephant,21,0
+8,bear,22,0
+9,zebra,23,0
+10,giraffe,24,0
+11,teddy_bear,87,1
