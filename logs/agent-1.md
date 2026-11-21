@@ -84,3 +84,8 @@ Append-only. Written by agent-1 only.
 **What:** Starting P3-1 pod-supervisor early (human decision) against pod-capture; P2-3 not done
 **Notes:** Plan: supervisor spawns Pod processes with SCHED_FIFO priorities, each process beats a shared-memory health table, restart after 3 missed 500 ms beats or on exit, thermal logging from /dev/thermal. Note: /dev/thermal (rpi_thermal), Screen and drm-rpi5 are not running on the Pi right now; restarting rpi_thermal needs sudo, not done.
 
+## 2026-11-21 16:33:30 | agent-1 | P2-2 | DOING
+**What:** pod-log written and tested on the Pi with a fake tracker and the real ground API
+**Files:** `pod/log/main.cpp`, `pod/log/fake_track.cpp`, `pod/log/CMakeLists.txt`, `pod/log/test_e2e.sh`, `pod/ipc/events_mq.h`, `pod/ipc/health.h`, `pod/scripts/deploy.sh`, `TASKS.md`
+**Notes:** pod-track to pod-log over POSIX mqueue /pod_events (events_mq.h). pod-log validates like the ground schema, assigns seq durably, appends fsynced JSONL, rotates by date and size, deletes old files only after the ground station acked them. Pi test (pod/log/test_e2e.sh): 3 invalid events skipped, kill -9 plus a half-written line recovered with seq continuing at 44, 120 events contiguous, uplink delivered all 120, retention deleted only acked files. health.h added for P3-1. deploy.sh now builds every pod component. Still to do for DONE: thumbnails (needs agent-2 frame source) and the real pod-track. Handoff row for agent-2 added.
+
