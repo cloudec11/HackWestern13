@@ -38,3 +38,8 @@ Append-only. Written by agent-1 only.
 **What:** Claiming P1-1: pod-capture (camera callback -> 4-slot shm ring -> pulse to infer)
 **Notes:** Plan: pod/ipc/ring.h first (portable, testable on the laptop), then pod/capture/ on QNX. Risk: no camera dev headers found in /usr/include/camera on the Pi; checking before writing the camera callback.
 
+## 2026-11-21 14:49:24 | agent-1 | P1-1 | DOING
+**What:** Added pod/ipc/ring.h: lock-free 4-slot newest-wins frame ring in POSIX shm with pulse semaphore; tests pass on the Pi
+**Files:** `pod/ipc/ring.h`, `pod/ipc/ring_test.cpp`
+**Notes:** For agent-2 pod-infer: ShmRing r; r.open(/pod_frames); then loop: r.ring.wait(ms), h = r.ring.acquire_latest(last_seq), read h and r.ring.payload(h), last_seq = h->seq, r.ring.release(). Consumer always gets the newest frame; skipped frames show as seq gaps; producer never blocks. Tested on Pi 5 QNX 8 with clang++ -std=c++17 -Wall -Wextra, no warnings: single-thread semantics, 200k-frame two-thread stress (0 torn reads, seq never backwards), two processes over shm with the semaphore. Camera side of P1-1 still blocked: no camera_api.h on the Pi, needs the QNX SDK. Code landed in commit fa19a89 without this entry because the first log call failed.
+
