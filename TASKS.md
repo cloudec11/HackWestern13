@@ -101,7 +101,7 @@ Nothing new after hour 30.
 |----|------|-------|--------|------------|
 | P5-1 | Record 2-minute backup demo video | agent-4 | TODO | P4-3 |
 | P5-2 | Devpost submission page + 5-slide deck | agent-4 | TODO | P4-3 |
-| P5-3 | Science and QNX Q&A prep sheets (feed into slides) | agent-3 + agent-1 | DOING | — |
+| P5-3 | Science and QNX Q&A prep sheets (feed into slides) | agent-3 + agent-1 | REVIEW (science half) | — |
 | P5-4 | Rehearse demo three times with a timer | all | TODO | P5-1 |
 
 ## Blockers and handoffs
@@ -116,6 +116,7 @@ Add a row when you are blocked or when your output is ready for someone else. Re
 | 2026-11-21 | agent-3 | agent-4 | `GET /api/simulation` is live (P2-5): fan chart p5/p25/p50/p75/p95 for years 0-10, `threshold`, `p_below_threshold`, plus `starts_below_threshold` and a fuller `params` block (shape in `ground/README.md`). `params.source` now says `illustrative` for r_g/K, not `literature`. Remove this row once read. |
 | 2026-11-21 | agent-3 | agent-4 | Forecast recalibrated on real data: every species' noise is now x2 (`params.NOISE_SCALE`), so `/api/simulation` fan charts are about twice as wide and risks are higher than before. That's intended: on held-out real moose counts the 90% band now holds the truth 94% of the time (was 58%). The median line is still no better than 'no change', so keep the illustrative labels. Details in `ground/README.md` (Backtest). Remove this row once read. |
 | 2026-11-21 | agent-3 | agent-4 | `GET /api/allocate?budget=` is live (P3-4), unblocking your P3-5 budget table + slider. Shape differs from the plan in one way: rows are per ZONE + action (patrols protect every species in a zone), species detail in `by_species`; `risk_before/after` = expected number of the zone's species falling below the threshold (can exceed 1). Also `options`, `actions`, totals. First call ~2.3 s, then cached: slider calls 9-29 ms; debounce ~200 ms. Shape in `ground/README.md`. Remove this row once read. |
+| 2026-11-21 | agent-3 | agent-1, agent-4 | P5-3 science Q&A sheet ready: `ground/QA_SCIENCE.md` (13 likely judge questions with say-it-out-loud answers, a don't-say list). agent-1: the bottom of it has QNX numbers gathered from your and agent-2's logs for your half; verify and own them. It also flags that the CPU-hog stress test (P3-2) has no numbers yet, and the pitch depends on it. agent-4: feed it into the slides. Remove this row once read. |
 | 2026-11-21 | agent-4 | agent-2 | Q2 in `docs/OPEN_QUESTIONS.md`: overfitting. agent-2: if fine-tuning (P3-6), split train/test by clip, not frame. (agent-3 part answered in `ground/README.md`.) |
 | 2026-11-21 | agent-2 | agent-1 | Label table ready: `models/labels.csv` (`class_id,species,model_index,demo_only`). Pod ids are compact (1 bird … 10 giraffe), not the raw model indices used in the `event_schema.json` examples. Class 11 `teddy_bear` has `demo_only=1` (plush demo set). (agent-3: read; fake_pod now uses this file, and density/simulation will skip demo_only.) agent-1: pod-uplink reads `species` from this file. Remove this row once read. |
 | 2026-11-21 | agent-4 | humans, agent-1 | Q3 + Q4 in `docs/OPEN_QUESTIONS.md`: extra sensors (PIR/BME280) and the NESDR Smartee SDR. Recommendation: at most one sensor after Gate 2; SDR goes on the laptop (not ESP32) as an optional Phase 4 stretch. Scope decision for humans. |

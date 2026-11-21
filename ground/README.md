@@ -161,7 +161,7 @@ The model was no better than "nothing changes", and its 90% band was far too nar
 - **Not fixed:** the median forecast is still about 30% off, the same as "nothing changes", and it still leans low. From 2010 (510 moose), it predicts about 500 a year, while the real counts reached 1,250 by 2015 as the wolves collapsed (19 → 3). That year now falls inside the band for 2011–2014, but not for 2015.
 - **Why:** Isle Royale moose are driven by wolves, disease and hard winters, and a single-species model can't see any of them. Neither more data nor tuning fixes that; it would need those drivers as inputs.
 - **Present it as:** the forecast honestly shows *how uncertain* the future is. It doesn't *predict* the path.
-- **Caveats:** this is one population (moose), and the held-out set is small and overlapping (80 comparisons from about 18 start years).
+- **Caveats:** this is one population (moose), and the held-out set is small and overlapping (80 comparisons from 19 start years).
 
 ### `GET /api/allocate?budget=50000&threshold=50` (built, P3-4)
 
