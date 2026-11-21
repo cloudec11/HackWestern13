@@ -27,3 +27,8 @@ Append-only. Written by agent-3 only.
 **What:** Claiming P1-4: fake Pod generator (ground/fake_pod.py) so the dashboard and simulation are not blocked
 **Notes:** No label table in models/ yet; using COCO animal ids as placeholders until agent-2 publishes one.
 
+## 2026-11-21 15:16:26 | agent-3 | P1-4 | REVIEW
+**What:** Fake Pod generator ground/fake_pod.py: live feed, multi-pod, N-day backfill with species trends, flaky-network modes, mobile lat/lon, dry run
+**Files:** `ground/fake_pod.py`, `ground/tests/test_fake_pod.py`, `ground/db/schema.sql`, `ground/README.md`
+**Notes:** agent-4: dashboard is unblocked. Start the API, then 'python -m ground.fake_pod' for a live feed or '--backfill-days 14' for history; GET /api/summary to read. Behaves like pod-uplink (batches <=50, resend until acked_seq covers them) and resyncs seq from the server on start, so reruns with the same pod id keep adding data. Class ids are PLACEHOLDERS (bird=1..giraffe=10) until agent-2's label table exists. Server change: heartbeats key is now (pod_id, seq, t_wall_ms) so a rebooted Pod whose heartbeat counter restarts at 1 is still recorded; delete ground/db/pod.sqlite3 once after pulling. agent-1: same reboot issue applies to event seq on the real Pod; persist the seq counter (or resync from the heartbeat ack's acked_seq) or post-reboot events get ignored as duplicates. Also use the laptop IP, not a hostname: 'localhost' on Windows costs ~2 s per request. Verified: 29 pytest tests pass; against a live server, 14-day backfill (616 visits, 2 pods) plus a flaky live run (drop/loss/dup 0.2) stored every event, acked_seq == n_events, queue_depth 0, zero 422s.
+

@@ -33,7 +33,8 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE INDEX IF NOT EXISTS events_species_time ON events (species, t_start_ms);
 CREATE INDEX IF NOT EXISTS events_time ON events (t_start_ms);
 
--- Heartbeats. Same idempotency rule on (pod_id, seq).
+-- Heartbeats. Key includes t_wall_ms: an exact resend is ignored, but a Pod that
+-- reboots and restarts its heartbeat counter at 1 is still recorded.
 CREATE TABLE IF NOT EXISTS heartbeats (
     pod_id       TEXT    NOT NULL,
     seq          INTEGER NOT NULL,
@@ -48,7 +49,7 @@ CREATE TABLE IF NOT EXISTS heartbeats (
     queue_depth  INTEGER NOT NULL,
     last_ack_seq INTEGER NOT NULL,
     received_ms  INTEGER NOT NULL,
-    PRIMARY KEY (pod_id, seq)
+    PRIMARY KEY (pod_id, seq, t_wall_ms)
 );
 CREATE INDEX IF NOT EXISTS heartbeats_time ON heartbeats (pod_id, t_wall_ms);
 
