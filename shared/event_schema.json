@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://thepod.local/shared/event_schema.json",
   "title": "The Pod: Pod -> ground station JSON contract",
-  "description": "v1 (DRAFT, pending P0-4 sign-off by all four agents). JSON form of shared/pod_msgs.h v1 as sent by pod-uplink to the ground station. Field names match pod_event_t and pod_heartbeat_t exactly; additions are marked 'JSON only'. Changes go through the contract change process in AGENTS.md section 6. Conventions: all times are Unix wall-clock milliseconds (*_ms); CLOCK_MONOTONIC *_ns values never leave the Pod. Unknown extra fields must be rejected by the ground station (additionalProperties false) so typos surface immediately. PRIVACY: there is no person species; the ground station rejects 'person'.",
+  "description": "v1 (signed off in P0-4 by all four agents, 2026-11-21). JSON form of shared/pod_msgs.h v1 as sent by pod-uplink to the ground station. Field names match pod_event_t and pod_heartbeat_t exactly; additions are marked 'JSON only'. Changes go through the contract change process in AGENTS.md section 6. Conventions: all times are Unix wall-clock milliseconds (*_ms); CLOCK_MONOTONIC *_ns values never leave the Pod. Unknown extra fields must be rejected by the ground station (additionalProperties false) so typos surface immediately. PRIVACY: there is no person species; the ground station rejects 'person'.",
   "x-version": 1,
 
   "$defs": {
