@@ -35,6 +35,7 @@
 #include <vector>
 
 #include "camapi_min.h"
+#include "health.h"
 #include "pod_msgs.h"
 #include "ring.h"
 
@@ -77,6 +78,7 @@ struct Stats {
 struct Ctx {
     pod::Ring* ring = nullptr;
     Stats* st = nullptr;
+    pod::HealthBeat* hb = nullptr; /* beats once per published frame: no frames = supervisor restarts us */
     uint64_t seq = 0;              /* only touched on the camera thread */
     int prio = 0;
     std::atomic<bool> prio_done{false};
@@ -130,6 +132,7 @@ void vf_cb(pod_cam_handle_t, pod_cam_buffer_t* b, void* arg) {
     hdr->data_size = static_cast<uint32_t>(bytes);
     std::memset(hdr->reserved, 0, sizeof hdr->reserved);
     c->ring->publish(slot);
+    c->hb->beat();
     const int64_t t1 = mono_ns();
 
     std::lock_guard<std::mutex> lk(st.mu);
@@ -174,9 +177,11 @@ int main(int argc, char** argv) {
     }
 
     Stats st;
+    pod::HealthBeat hb;
     Ctx ctx;
     ctx.ring = &ring.ring;
     ctx.st = &st;
+    ctx.hb = &hb;
     ctx.prio = o.prio;
 
     pod_cam_handle_t cam = -1;
@@ -192,8 +197,8 @@ int main(int argc, char** argv) {
         camera_close(cam);
         return 1;
     }
-    std::printf("pod-capture: unit %d -> ring %s (%d slots, %u B/slot), prio %d\n",
-                o.unit, o.shm.c_str(), POD_FRAME_SLOTS, o.max_payload, o.prio);
+    std::printf("pod-capture: unit %d -> ring %s (%d slots, %u B/slot), prio %d%s\n",
+                o.unit, o.shm.c_str(), POD_FRAME_SLOTS, o.max_payload, o.prio, hb.attached() ? ", supervised" : "");
     std::fflush(stdout);
 
     const int64_t start = mono_ns();
