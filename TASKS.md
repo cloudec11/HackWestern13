@@ -66,7 +66,7 @@ Claim a task by setting `DOING` and committing that change **before** starting w
 | P2-1 | `pod-track`: IoU tracker, one visit event per animal visit | agent-2 | DONE | P1-2 |
 | P2-2 | `pod-log`: JSONL with seq numbers + thumbnails, rotation | agent-1 | DOING | P0-4, P2-1 |
 | P2-3 | `pod-uplink`: store-and-forward, cursor advances on ack only | agent-1 | REVIEW | P1-3, P2-2 |
-| P2-4 | Density estimate (Random Encounter Model) from real events | agent-3 | DOING | P1-3 |
+| P2-4 | Density estimate (Random Encounter Model) from real events | agent-3 | REVIEW | P1-3 |
 | P2-5 | Ricker Monte Carlo simulation (notebook, then `simulate.py`) | agent-3 | TODO | P2-4 |
 | P2-6 | Dashboard: live feed + Pod health panel on real data | agent-4 | TODO | P1-5, P2-3 |
 
@@ -111,6 +111,7 @@ Add a row when you are blocked or when your output is ready for someone else. Re
 | Date/time | From | To | What |
 |-----------|------|----|------|
 | 2026-11-21 | agent-3 | agent-4 | Q1 + Q2 answered: results endpoint shapes (`/api/density`, `/api/simulation`, `/api/allocate`, `/api/zones`) and the overfitting approach are in `ground/README.md` under "Results endpoints". Mostly your proposal; changes listed there. Remove this row once you have read it. |
+| 2026-11-21 | agent-3 | agent-4 | `GET /api/density` and `GET /api/zones` are live (shapes in `ground/README.md`). Two additive fields beyond the agreed shape: `not_applicable` + `note` (birds: the model doesn't apply). A species filter lists every zone, with `insufficient_data` where a zone has no visits. Remove this row once read. |
 | 2026-11-21 | agent-4 | agent-2 | Q2 in `docs/OPEN_QUESTIONS.md`: overfitting. agent-2: if fine-tuning (P3-6), split train/test by clip, not frame. (agent-3 part answered in `ground/README.md`.) |
 | 2026-11-21 | agent-2 | agent-1 | Label table ready: `models/labels.csv` (`class_id,species,model_index,demo_only`). Pod ids are compact (1 bird … 10 giraffe), not the raw model indices used in the `event_schema.json` examples. Class 11 `teddy_bear` has `demo_only=1` (plush demo set). (agent-3: read; fake_pod now uses this file, and density/simulation will skip demo_only.) agent-1: pod-uplink reads `species` from this file. Remove this row once read. |
 | 2026-11-21 | agent-4 | humans, agent-1 | Q3 + Q4 in `docs/OPEN_QUESTIONS.md`: extra sensors (PIR/BME280) and the NESDR Smartee SDR. Recommendation: at most one sensor after Gate 2; SDR goes on the laptop (not ESP32) as an optional Phase 4 stretch. Scope decision for humans. |

@@ -17,6 +17,8 @@ Endpoints:
     POST /api/heartbeat  body: heartbeat       -> heartbeat_ack
     GET  /api/summary    ?recent=20            dashboard overview
     GET  /api/events     ?pod_id=&species=&since_ms=&limit=200
+    GET  /api/zones      zones, their area and Pods
+    GET  /api/density    ?zone_id=&species=   Random Encounter Model estimates (ground/density.py)
     GET  /health         liveness check
 
 Errors are JSON: {"detail": [{"path": ..., "error": ...}, ...]} with HTTP 422
@@ -40,6 +42,7 @@ from typing import Any, Callable, Iterator
 from urllib.parse import parse_qs
 from wsgiref.simple_server import WSGIRequestHandler, WSGIServer, make_server
 
+from ground import density
 from ground.schema_check import load_validators
 
 HERE = Path(__file__).resolve().parent
@@ -258,7 +261,18 @@ class App:
             ("GET", "/api/events"): lambda env, q: self.store.events(
                 _str_param(q, "pod_id"), _str_param(q, "species"),
                 _int_param(q, "since_ms", None), _int_param(q, "limit", 200, 1, 10000)),
+            ("GET", "/api/zones"): self.get_zones,
+            ("GET", "/api/density"): self.get_density,
         }
+
+    def get_zones(self, environ: dict, q: dict) -> dict:
+        with self.store.conn() as c:
+            return {"zones": density.zones(c)}
+
+    def get_density(self, environ: dict, q: dict) -> dict:
+        with self.store.conn() as c:
+            results = density.density_results(c, _str_param(q, "zone_id"), _str_param(q, "species"))
+        return {"generated_ms": now_ms(), "results": results}
 
     def post_events(self, environ: dict, q: dict) -> dict:
         body = _read_json(environ)

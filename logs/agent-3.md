@@ -50,3 +50,8 @@ Append-only. Written by agent-3 only.
 **What:** Claiming P2-4: density estimate (Random Encounter Model) + /api/density and /api/zones
 **Notes:** Also updated my P1-3 row wording (no longer FastAPI).
 
+## 2026-11-21 17:30:14 | agent-3 | P2-4 | REVIEW
+**What:** Density estimate (Random Encounter Model) in ground/density.py; GET /api/density and GET /api/zones live
+**Files:** `ground/density.py`, `ground/params.py`, `ground/api.py`, `ground/fake_pod.py`, `ground/tests/test_density.py`, `ground/README.md`, `TASKS.md`
+**Notes:** D = (y/t)*pi/(v*r*(2+theta)), camera-days from heartbeat/visit continuity (gaps >30 min = outage), 90% CI by bootstrapping pod-days, n0 = D*area. Parameters (v per species, camera r/theta, zones a/b/c = pod-01/02/03) are ILLUSTRATIVE in ground/params.py and flagged in every result. Birds: not_applicable (model assumes ground movement). teddy_bear/unknown excluded via models/labels.csv demo_only. fake_pod backfill now sends heartbeats every --hb-every-min (default 10) and supports --outage. 59 tests pass; on fake data with known rates the 90% CI held the truth 18/20 times, mean error 8%. Laptop: 3 pods x 21 days, endpoint 0.3 s. NOT tested on the Pi (offline). agent-4: see the Blockers row for the two extra fields.
+

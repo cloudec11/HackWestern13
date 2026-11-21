@@ -34,7 +34,8 @@ This script stands in for the real Pod until the Pi side is done. It sends schem
 ```
 python -m ground.fake_pod                                   # live feed, ~6 visits/min, forever (Ctrl+C)
 python -m ground.fake_pod --pods 3 --live-rate 20           # 3 Pods, busier
-python -m ground.fake_pod --backfill-days 30 --trend elephant=-5   # 30 days of history in seconds
+python -m ground.fake_pod --backfill-days 30 --trend elephant=-5   # 30 days of history (about a minute)
+python -m ground.fake_pod --backfill-days 21 --outage 5-8          # camera off on days 5 to 8
 python -m ground.fake_pod --drop 0.2 --loss 0.1 --dup 0.1   # flaky network: outages, lost and repeated events
 python -m ground.fake_pod --mobile                          # adds simulated lat/lon
 python -m ground.fake_pod --dry-run --duration 5            # print JSON, send nothing
@@ -44,12 +45,13 @@ python -m ground.fake_pod --dry-run --duration 5            # print JSON, send n
 - The default URL is `http://127.0.0.1:8000`. On Windows, `localhost` adds about 2 s per request.
 - Class ids come from agent-2's `models/labels.csv`. Every number it produces is made up.
 - Also runs on the Pi: `python3 -m ground.fake_pod --url http://127.0.0.1:8000`.
+- Backfill also sends a heartbeat every `--hb-every-min` simulated minutes (default 10). That's how the density estimate knows the camera was running. Most of the backfill time goes on these (about 17 ms each on the laptop), so raise it up to 29 for a quicker load. Above 30, the camera would look switched off.
 
 If you pulled a schema change in `ground/db/schema.sql`, delete `ground/db/pod.sqlite3` once so it is recreated.
 
-## Results endpoints (planned: agent-3 answer to agent-4's Q1)
+## Results endpoints (agent-3 answer to agent-4's Q1)
 
-These aren't built yet (P2-4, P2-5, P3-4). The shapes below are what they'll return, so the dashboard can build against a fake file with exactly these shapes now. They're served by `ground/api.py` and aren't part of `shared/`. agent-3 changes them only after telling agent-4.
+**Built:** `/api/density` and `/api/zones` (P2-4). **Planned:** `/api/simulation` (P2-5) and `/api/allocate` (P3-4). The shapes below are what they return, so the dashboard can build against a fake file with exactly these shapes now. They're served by `ground/api.py` and aren't part of `shared/`. agent-3 changes them only after telling agent-4.
 
 They start from agent-4's proposal, with these changes:
 
@@ -78,6 +80,17 @@ They start from agent-4's proposal, with these changes:
 ```
 
 `ci_low` and `ci_high` are a 90% interval from bootstrapping over camera-days. `n0` is `density × area`, the starting population for the simulation. If a zone/species has fewer than 5 visits, the result carries `"insufficient_data": true` and null numbers; show it as "not enough data yet".
+
+As built (`ground/density.py`, parameters in `ground/params.py`):
+
+- **Formula:** Random Encounter Model, `D = (visits / camera_days) × π / (v × r × (2 + θ))` (Rowcliffe et al. 2008). `v` is the species' daily travel distance, and `r` and `θ` are the camera's detection radius and angle. All three are **illustrative**, and the result says so in `params.source`.
+- **`camera_days`** counts only time the camera was provably running: any stretch with no heartbeat or visit for over 30 minutes counts as an outage.
+- **Birds** come back with `"not_applicable": true` and a `note`. The model assumes animals moving on the ground, so it doesn't apply to them.
+- **`teddy_bear`** (the label table's `demo_only` class) and `unknown` are never estimated.
+- **Zones:** zone-a/b/c are defined in `ground/params.py`, with pod-01 → zone-a, pod-02 → zone-b and pod-03 → zone-c. Any other Pod shows up under `unassigned`.
+- **Filtering:** with no filter, each zone lists the species it has seen. Asking for one `species` lists it for every zone, with `insufficient_data` where a zone has no visits.
+- **Speed:** about 0.3 s on the laptop for 3 Pods × 21 days. Not yet timed on the Pi.
+- **Accuracy on fake data with known rates:** the 90% interval contained the true value in 18 of 20 independent datasets, with a mean error of 8%.
 
 ### `GET /api/simulation?zone_id=&species=` (both optional)
 
@@ -123,7 +136,7 @@ Each percentile array has one value per year (11 values for years 0–10). `p_be
 { "zones": [ { "zone_id": "zone-a", "name": "North ridge", "area_km2": 5.0, "pods": ["pod-01"] } ] }
 ```
 
-Demo zones will be seeded with the fake Pods mapped to them (pod-01 → zone-a, and so on).
+Built. Zones come from `ground/params.py` (not the database), and Pods outside them are listed under `unassigned`.
 
 ### Q2 (overfitting): agent-3 agrees with agent-4's proposal
 
@@ -131,7 +144,7 @@ Demo zones will be seeded with the fake Pods mapped to them (pod-01 → zone-a, 
 - Pod data sets only the starting population `n0`. A sustained trend in visits per camera-day may nudge `r_g` within its range; when it does, `params.source.r_g` becomes `"literature+pod_trend"`.
 - Each of the 1,000 runs draws its own `r_g`, `K` and `n0` (from the density interval) as well as yearly noise. The fan chart then shows parameter uncertainty, not just weather.
 - The model stays two-parameter Ricker plus losses. No regression model, so ridge isn't needed.
-- Check: run density on `fake_pod --backfill-days 30` data, where the true visit rates are known, and confirm it recovers them. That will be a test in `ground/tests/`.
+- Check: density is tested on fake data with known visit rates (`ground/tests/test_density.py`), and it recovers them.
 
 ## Tests (laptop)
 

@@ -207,11 +207,22 @@ class FakePod:
 
 # ---- modes ----
 
-def backfill(pods: list[FakePod], days: float, post: PostFn, now_ms: Optional[int] = None) -> int:
-    """Generate `days` of history per Pod (Poisson visits, hour by hour), then send it all."""
+def backfill(pods: list[FakePod], days: float, post: PostFn, now_ms: Optional[int] = None,
+             hb_every_min: float = 10, outages: Optional[list[tuple[float, float]]] = None) -> int:
+    """Generate `days` of history per Pod (Poisson visits, hour by hour), then send it all.
+
+    Heartbeats go out every `hb_every_min` minutes of simulated history, so the
+    ground station can see the camera was running (the density estimate needs
+    camera-days). `outages` is a list of (start_day, end_day) offsets from the
+    start of the history during which the camera is "off": no heartbeats, no visits.
+    """
     now_ms = now_ms or int(time.time() * 1000)
     t0 = int(now_ms - days * DAY_MS)
     hour = 3_600_000
+    off = [(t0 + a * DAY_MS, t0 + b * DAY_MS) for a, b in (outages or [])]
+
+    def is_off(t: float) -> bool:
+        return any(a <= t < b for a, b in off)
     total = 0
     for pod in pods:
         pod.sync(post, now_ms)
@@ -222,9 +233,14 @@ def backfill(pods: list[FakePod], days: float, post: PostFn, now_ms: Optional[in
                 lam = pod.rate_at(sp, t, t0) / 24         # expected visits this hour
                 starts += [(t + pod.rng.random() * hour, sp) for _ in range(_poisson(pod.rng, lam))]
         for t, sp in sorted(starts):                      # seq follows time order
-            if t < now_ms:
+            if t < now_ms and not is_off(t):
                 pod.make_visit(sp, t)
                 total += 1
+        if hb_every_min > 0:
+            step = int(hb_every_min * 60_000)
+            for t in range(t0, now_ms, step):
+                if not is_off(t):
+                    pod.heartbeat(post, t)
         for _ in range(1000):                             # retries cover --drop / --loss
             if not pod.queue:
                 break
@@ -297,6 +313,9 @@ def main(argv=None) -> int:
     p.add_argument("--live-rate", type=float, default=6.0, help="visits per minute per Pod (live mode)")
     p.add_argument("--duration", type=float, default=None, help="live mode: stop after N seconds")
     p.add_argument("--backfill-days", type=float, default=0, help="send N days of history, then exit")
+    p.add_argument("--hb-every-min", type=float, default=10,
+                   help="backfill: heartbeat spacing in simulated minutes (proves the camera was on)")
+    p.add_argument("--outage", default="", help="backfill: camera-off periods in days, e.g. 3-5,10-10.5")
     p.add_argument("--mobile", action="store_true", help="add simulated lat/lon (drone/rover mode)")
     p.add_argument("--drop", type=float, default=0.0, help="probability a send attempt hits a network outage")
     p.add_argument("--loss", type=float, default=0.0, help="probability one event is lost from a batch")
@@ -316,7 +335,11 @@ def main(argv=None) -> int:
     post = dry_run_post if a.dry_run else http_post(a.url)
 
     if a.backfill_days:
-        n = backfill(pods, a.backfill_days, post)
+        outages = []
+        for part in filter(None, (x.strip() for x in a.outage.split(","))):
+            lo, _, hi = part.partition("-")
+            outages.append((float(lo), float(hi)))
+        n = backfill(pods, a.backfill_days, post, hb_every_min=a.hb_every_min, outages=outages)
         print(f"backfill: {n} visits over {a.backfill_days:g} days from {len(pods)} pod(s); "
               f"acked: {', '.join(f'{x.pod_id}={x.acked}' for x in pods)}", file=sys.stderr)
         return 0
