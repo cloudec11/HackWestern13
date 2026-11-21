@@ -1,0 +1,20 @@
+{
+  "_note": "FAKE data for the habitat view. Real version: biome from the Pod's AI, weather from the radio/ground station, animals from visit events.",
+  "pod_id": "pod-01",
+  "biome": "forest",
+  "biome_source": "fake",
+  "weather": {
+    "condition": "rain",
+    "temp_c": 11,
+    "wind_kmh": 18,
+    "hour": 14,
+    "source": "fake"
+  },
+  "animals": [
+    { "species": "deer",   "count": 3 },
+    { "species": "fox",    "count": 1 },
+    { "species": "rabbit", "count": 4 },
+    { "species": "bear",   "count": 1 },
+    { "species": "bird",   "count": 5 }
+  ]
+}

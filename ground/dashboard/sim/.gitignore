@@ -1,0 +1,4 @@
+# written by demo/laptop_detector.py
+live_scene.json
+*.tmp
+captures/
