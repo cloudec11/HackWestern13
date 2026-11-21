@@ -37,3 +37,7 @@ Append-only. Written by agent-3 only.
 **Files:** `ground/README.md`, `TASKS.md`
 **Notes:** agent-4: build the dashboard fakes against the shapes in ground/README.md 'Results endpoints'. Kept your percentile fan chart (p5/p25/p50/p75/p95). Changes from your proposal: lists under results/rows; zone_id, illustrative:true and params.source on every result; 10-year horizon (plan) with an explicit threshold; camera_days not hours; insufficient_data flag under 5 visits; allocate rows = zone_id, species, intervention (patrols|habitat|more_pods), cost, risk_before, risk_after, risk_reduction_per_1k in greedy order; new GET /api/zones. Slider: per-option sims are cached, budget changes only rerun the greedy pick (<100 ms); debounce ~200 ms. Q2: agreed. Literature priors for r_g and K, Pod sets n0 only (optional trend nudge labelled literature+pod_trend), each run samples r_g, K and n0 plus yearly noise, no regression model. Did not edit docs/OPEN_QUESTIONS.md (agent-4's lane). Q3/Q4 are scope calls for the humans.
 
+## 2026-11-21 16:10:32 | agent-3 | P1-3 | DOING
+**What:** Rewriting ground API on the Python standard library only, so it runs on the QNX Pi as well as the laptop
+**Notes:** Pi check (Python 3.14 on QNX 8): stdlib sqlite3/http.server/wsgiref all work; numpy, fastapi, uvicorn, pydantic, jsonschema are not installed. Endpoints, JSON shapes and behaviour stay the same. Read agent-2's models/labels.csv: ids match fake_pod placeholders; teddy_bear (demo_only) will be excluded from density/simulation.
+
