@@ -176,6 +176,29 @@ public:
 
     void release() { ctrl_->reading_slot.store(kNoSlot, std::memory_order_seq_cst); }
 
+    /* ---- observer side (e.g. pod-view) ---- */
+
+    /* Copy the newest frame WITHOUT claiming it: never blocks the producer, never touches
+     * reading_slot or the pulse, so the real consumer is not disturbed. Any number of
+     * observers may call this. Returns false if there is no frame newer than last_seq, it
+     * does not fit in cap bytes, or the producer moved on during the copy (try again later).
+     * Why the check is enough: the producer only rewrites a slot after it stops being
+     * latest, which needs a publish, which changes published_seq. */
+    bool peek_latest(uint64_t last_seq, pod_frame_hdr_t* hdr_out, uint8_t* dst, size_t cap) const {
+        const uint64_t before = ctrl_->published_seq.load(std::memory_order_seq_cst);
+        const uint32_t s = ctrl_->latest_slot.load(std::memory_order_seq_cst);
+        if (s == kNoSlot || before == 0 || before <= last_seq) return false;
+        const pod_frame_hdr_t* h = hdr_at(s);
+        pod_frame_hdr_t hc;
+        std::memcpy(&hc, h, sizeof hc);
+        if (hc.seq != before || hc.data_size > cap) return false;   /* a publish slipped in between the loads */
+        std::memcpy(dst, payload(h), hc.data_size);
+        std::atomic_thread_fence(std::memory_order_seq_cst);
+        if (ctrl_->published_seq.load(std::memory_order_seq_cst) != before) return false;
+        *hdr_out = hc;
+        return true;
+    }
+
     /* ---- both sides ---- */
 
     uint8_t* payload(pod_frame_hdr_t* h) const { return reinterpret_cast<uint8_t*>(h) + sizeof(pod_frame_hdr_t); }

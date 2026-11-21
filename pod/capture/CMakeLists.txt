@@ -19,5 +19,10 @@ target_link_libraries(pod-capture camapi)
 
 add_executable(capture_check capture_check.cpp)
 
+# pod-view: live view in a browser (setup/demo tool). libturbojpeg has no dev symlink or header
+# on the Pi, so link the versioned library by path (declarations in tj_min.h).
+add_executable(pod-view view.cpp)
+target_link_libraries(pod-view /usr/lib/libturbojpeg.so.0 socket)
+
 add_executable(cam_probe cam_probe.c)
 target_link_libraries(cam_probe camapi)

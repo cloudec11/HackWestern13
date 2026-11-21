@@ -6,7 +6,7 @@
 #   POD_HOST=qnxuser@192.168.50.2 POD_DIR=pod-deploy sh pod/scripts/deploy.sh
 #
 # Copies pod/, shared/ and models/labels.csv to ~/$POD_DIR on the Pi using tar over SSH
-# (plain scp was unreliable on the hotspot), then builds every pod/*/CMakeLists.txt there.
+# (plain scp was unreliable on the hotspot), then builds agent-1's components there.
 # Needs SSH key login to the Pi (see the repo notes). Does not start or stop anything.
 set -eu
 
@@ -24,9 +24,10 @@ echo "deploy: copying $FILES -> $HOST:~/$DIR"
 tar -cf - --exclude=build --exclude=__pycache__ $FILES \
     | $SSH "$HOST" "mkdir -p ~/$DIR && cd ~/$DIR && tar -xf -"
 
-COMPONENTS=""
-for c in pod/*/CMakeLists.txt; do COMPONENTS="$COMPONENTS $(basename "$(dirname "$c")")"; done
-echo "deploy: building on the Pi:$COMPONENTS"
+# agent-1's components by default. agent-2 builds pod/infer and pod/track themselves (they need
+# the TFLite build); include them with e.g. POD_COMPONENTS="capture log supervisor track".
+COMPONENTS="${POD_COMPONENTS:-capture log supervisor}"
+echo "deploy: building on the Pi: $COMPONENTS"
 for c in $COMPONENTS; do
     $SSH "$HOST" "cd ~/$DIR && mkdir -p build && export CMAKE_POLICY_VERSION_MINIMUM=3.5 \
         && cmake -S pod/$c -B build/$c > build/$c.cmake.log 2>&1 \
