@@ -29,6 +29,7 @@ theta are right. Here v, r and theta are illustrative.
 """
 from __future__ import annotations
 
+import bisect
 import math
 import random
 import sqlite3
@@ -57,15 +58,38 @@ class Unit:
     counts: Counter = field(default_factory=Counter)
 
 
+def running_intervals(timestamps: list[int], gap_ms: int = params.OUTAGE_GAP_MIN * 60_000) -> list[tuple[int, int]]:
+    """Merge heartbeat times into [start, end] stretches when the camera was provably on.
+    Two heartbeats no more than gap_ms apart count as continuous running."""
+    ts = sorted(set(timestamps))
+    out: list[list[int]] = []
+    for a, b in zip(ts, ts[1:]):
+        if b - a > gap_ms:
+            continue
+        if out and out[-1][1] == a:
+            out[-1][1] = b
+        else:
+            out.append([a, b])
+    return [(a, b) for a, b in out]
+
+
+def _covered(intervals: list[tuple[int, int]], t: int) -> bool:
+    i = bisect.bisect_right(intervals, (t, float("inf"))) - 1
+    return i >= 0 and intervals[i][0] <= t <= intervals[i][1]
+
+
 def effort_units(timestamps_by_pod: dict[str, list[int]],
                  visits: list[tuple[str, int, str]],
-                 gap_ms: int = params.OUTAGE_GAP_MIN * 60_000) -> list[Unit]:
+                 gap_ms: int = params.OUTAGE_GAP_MIN * 60_000,
+                 uncovered: Counter | None = None) -> list[Unit]:
     """Split each pod's running time into calendar-day units and attach visits.
 
-    timestamps_by_pod: every moment we know the camera was alive (heartbeats,
-    visit start/end). Two consecutive moments no more than gap_ms apart count
-    as continuous running; a longer gap is an outage and adds no effort.
-    visits: (pod_id, t_start_ms, species).
+    timestamps_by_pod: heartbeat times, i.e. moments the camera reported it was
+    running. Visit times are deliberately NOT used here: a visit proves only a few
+    seconds of running time, and counting them made camera time collapse to near
+    zero with no heartbeats (agent-1's review: 6 cat visits read as 4.4 million cats).
+    visits: (pod_id, t_start_ms, species). A visit counts only if it falls inside a
+    running stretch; the rest are tallied in `uncovered` (pod_id, species) if given.
     """
     units: dict[tuple[str, int], Unit] = {}
 
@@ -75,18 +99,19 @@ def effort_units(timestamps_by_pod: dict[str, list[int]],
             units[key] = Unit(pod, day)
         return units[key]
 
-    for pod, ts in timestamps_by_pod.items():
-        ts = sorted(ts)
-        for a, b in zip(ts, ts[1:]):
-            if b - a > gap_ms or b == a:
-                continue
+    spans = {pod: running_intervals(ts, gap_ms) for pod, ts in timestamps_by_pod.items()}
+    for pod, iv in spans.items():
+        for a, b in iv:
             while a < b:                                  # split at UTC midnight
                 day = a // DAY_MS
                 end = min(b, (day + 1) * DAY_MS)
                 unit(pod, day).effort_days += (end - a) / DAY_MS
                 a = end
     for pod, t, species in visits:
-        unit(pod, t // DAY_MS).counts[species] += 1
+        if _covered(spans.get(pod, []), t):
+            unit(pod, t // DAY_MS).counts[species] += 1
+        elif uncovered is not None:
+            uncovered[(pod, species)] += 1
     return sorted(units.values(), key=lambda u: (u.pod_id, u.day))
 
 
@@ -122,7 +147,8 @@ def _sig(x: float | None, digits: int = 3) -> float | None:
     return round(x, max(0, digits - 1 - int(math.floor(math.log10(abs(x))))))
 
 
-def estimate(units: list[Unit], zone_id: str, species: str, area_km2: float) -> dict:
+def estimate(units: list[Unit], zone_id: str, species: str, area_km2: float,
+             uncovered_visits: int = 0) -> dict:
     """One /api/density result for a zone and species."""
     sp = params.SPECIES.get(species, {})
     cam = params.CAMERA
@@ -130,7 +156,8 @@ def estimate(units: list[Unit], zone_id: str, species: str, area_km2: float) -> 
     out = {
         "zone_id": zone_id, "species": species,
         "density_per_km2": None, "ci_low": None, "ci_high": None,
-        "n_visits": y, "camera_days": round(t, 2), "area_km2": area_km2,
+        "n_visits": y, "uncovered_visits": uncovered_visits,
+        "camera_days": round(t, 2), "area_km2": area_km2,
         "n0": None, "n0_ci": None,
         "params": {"v_km_per_day": sp.get("v_km_per_day"), "r_km": cam["r_km"],
                    "theta_rad": cam["theta_rad"], "source": params.SPECIES_SOURCE},
@@ -142,9 +169,14 @@ def estimate(units: list[Unit], zone_id: str, species: str, area_km2: float) -> 
     if not sp.get("rem_ok"):
         out.update(not_applicable=True, note=sp.get("note", "model not valid for this species"))
         return out
-    if y < params.MIN_VISITS or t <= 0:
+    if t < params.MIN_CAMERA_DAYS:
+        why = (f"no heartbeats cover {uncovered_visits} visit(s), so camera running time is unknown"
+               if uncovered_visits else "not enough camera running time yet")
         out.update(insufficient_data=True,
-                   note=f"needs at least {params.MIN_VISITS} visits and some camera time")
+                   note=f"{why}; needs at least {params.MIN_CAMERA_DAYS * 24:g} h of heartbeats")
+        return out
+    if y < params.MIN_VISITS:
+        out.update(insufficient_data=True, note=f"needs at least {params.MIN_VISITS} visits during camera running time")
         return out
 
     def dens(rate: float) -> float:
@@ -163,8 +195,11 @@ def estimate(units: list[Unit], zone_id: str, species: str, area_km2: float) -> 
 
 # ---- Reading from the ground station database ----
 
-def load_units(conn: sqlite3.Connection, pods: list[str] | None = None) -> dict[str, list[Unit]]:
-    """Effort units grouped by zone, from the events and heartbeats tables."""
+def load_units(conn: sqlite3.Connection, pods: list[str] | None = None,
+               uncovered_by_zone: dict | None = None) -> dict[str, list[Unit]]:
+    """Effort units grouped by zone, from the events and heartbeats tables.
+    If uncovered_by_zone is a dict, it is filled with {zone: Counter(species)} of
+    visits that no heartbeat stretch covers."""
     excluded = params.demo_only_species()
     where, args = "", []
     if pods is not None:
@@ -176,14 +211,16 @@ def load_units(conn: sqlite3.Connection, pods: list[str] | None = None) -> dict[
     visits = []
     for pod, t in conn.execute(f"SELECT pod_id, t_wall_ms FROM heartbeats{where}", args):
         stamps[pod].append(t)
-    for pod, t0, t1, species in conn.execute(
-            f"SELECT pod_id, t_start_ms, t_end_ms, species FROM events{where}", args):
-        stamps[pod] += [t0, t1]
+    for pod, t0, species in conn.execute(f"SELECT pod_id, t_start_ms, species FROM events{where}", args):
         if species not in excluded:
             visits.append((pod, t0, species))
+    unc: Counter = Counter()
     by_zone: dict[str, list[Unit]] = defaultdict(list)
-    for u in effort_units(stamps, visits):
+    for u in effort_units(stamps, visits, uncovered=unc):
         by_zone[params.zone_of(u.pod_id)].append(u)
+    if uncovered_by_zone is not None:
+        for (pod, sp), n in unc.items():
+            uncovered_by_zone.setdefault(params.zone_of(pod), Counter())[sp] += n
     return dict(by_zone)
 
 
@@ -205,17 +242,19 @@ def density_results(conn: sqlite3.Connection, zone_id: str | None = None,
                     species: str | None = None) -> list[dict]:
     """All /api/density results, optionally filtered. Species with no visits in a
     zone are left out, unless a species filter asks for it explicitly."""
-    units_by_zone = load_units(conn)
+    uncovered: dict = {}
+    units_by_zone = load_units(conn, uncovered_by_zone=uncovered)
     excluded = params.demo_only_species()
     results = []
     for z in zones(conn):
         if zone_id and z["zone_id"] != zone_id:
             continue
         units = units_by_zone.get(z["zone_id"], [])
-        seen = sorted({s for u in units for s, c in u.counts.items() if c})
+        unc = uncovered.get(z["zone_id"], Counter())
+        seen = sorted({s for u in units for s, c in u.counts.items() if c} | {s for s, n in unc.items() if n})
         wanted = [species] if species else seen
         for sp in wanted:
             if sp in excluded:
                 continue
-            results.append(estimate(units, z["zone_id"], sp, z["area_km2"]))
+            results.append(estimate(units, z["zone_id"], sp, z["area_km2"], unc.get(sp, 0)))
     return results

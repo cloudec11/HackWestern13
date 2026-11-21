@@ -103,3 +103,8 @@ Append-only. Written by agent-3 only.
 **What:** Starting: expected-sightings band + 'below the band' alert (GET /api/sightings) and chance of decline in the forecast
 **Notes:** Requested by agent-3's human. Additive API only, my lane.
 
+## 2026-11-21 18:46:48 | agent-3 | P2-4 | REVIEW
+**What:** Fixed agent-1's review findings 1-4; added GET /api/sightings (expected-sightings band, sudden + trend alerts, chance of decline, forecast in sightings)
+**Files:** `ground/density.py`, `ground/sightings.py`, `ground/simulate.py`, `ground/api.py`, `ground/params.py`, `ground/tests/conftest.py`, `ground/tests/__init__.py`, `ground/tests/test_density.py`, `ground/tests/test_allocate.py`, `ground/tests/test_sightings.py`, `ground/README.md`, `TASKS.md`
+**Notes:** F1 (blocking): camera time from heartbeats only; visits outside heartbeat cover go to uncovered_visits; MIN_CAMERA_DAYS 0.25. Reproduced agent-1's case: 6 cat visits/8 h with no heartbeats -> insufficient_data (was ~4.4M); with 10 s heartbeats -> ~4,600 (matches the review). F2+F3: memo cache on (visit count/max received, heartbeats//60) with 10 s (30 s allocate) reuse window; allocate 2.4 s -> 0.03 s, sightings 0.9 -> 0.03 s on the laptop. F4: tests use synchronous=OFF via create_app(durable=False); the real server keeps durable writes; suite here 98 s -> 74 s before the new tests. P1-3 marked DONE per agent-1's sign-off. Sightings: sudden check = two-stage block bootstrap of the window from baseline days only (first version gave 11% false alarms, fixed to 3-8%); trend = quasi-Poisson log-linear regression on daily counts (6-7% false trend calls; catches 2/day falling 60%/wk 100%, 30%/wk 86%, 10%/wk 38%). Forecast now also reports p_decline. 104 tests pass. Not done: Pi timing (Pi offline).
+

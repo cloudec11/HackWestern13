@@ -112,6 +112,7 @@ DEFAULT_BUDGET = 50_000
 
 # ---- Density method settings ----
 MIN_VISITS = 5            # fewer visits than this -> "insufficient_data"
+MIN_CAMERA_DAYS = 0.25    # need >= 6 h of heartbeat-proven running time before estimating
 OUTAGE_GAP_MIN = 30       # a gap with no heartbeat or event longer than this = camera off
 BOOTSTRAP_RESAMPLES = 1000
 CI_LEVEL = 0.90

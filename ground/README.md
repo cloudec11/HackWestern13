@@ -227,6 +227,69 @@ python -m http.server 8080 --directory ground/dashboard/sim
 - `biome` comes from the zone's setting in `ground/params.py`.
 - `weather` is an honest placeholder: no one owns a weather feed yet. With no `hour`, the view uses the viewer's clock.
 
+### `GET /api/sightings?zone_id=&species=&window_days=7&baseline_days=28` (built): expected sightings and alerts
+
+This answers the questions "should we have seen more (or fewer) animals lately?" and "is the sighting rate drifting?" It works for every species, birds included, because it needs no ecology parameters.
+
+```json
+{ "window_days": 7, "baseline_days": 28, "cached": false, "data_age_s": 0,
+  "alerts": [ { "kind": "sudden", "zone_id": "zone-c", "species": "giraffe", "status": "below",
+                "actual": 10, "expected": { "p5": 12, "p50": 20, "p95": 29 }, "change_pct": -50 },
+              { "kind": "trend", "zone_id": "zone-a", "species": "elephant", "status": "declining",
+                "weekly_change_pct": -58.1, "ci90_pct": [-70.2, -41.0] } ],
+  "results": [ { "zone_id": "zone-a", "species": "zebra",
+                 "window":   { "start_ms": 0, "end_ms": 0, "camera_days": 7.0, "actual": 43 },
+                 "baseline": { "days": 28, "camera_days": 28.0, "visits": 170 },
+                 "expected": { "p5": 26, "p50": 35, "p95": 42 }, "status": "above", "change_pct": 22.9,
+                 "trend": { "weekly_change_pct": 3.1, "ci90_pct": [-4.0, 10.7], "status": "no_clear_trend",
+                            "days_used": 35, "dispersion": 1.2 },
+                 "p_decline_10y": 0.62,
+                 "forecast_monthly": { "years": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+                                       "p5": [], "p50": [], "p95": [],
+                                       "per_animal_per_camera_day": 0.0388, "cameras": 1 } } ] }
+```
+
+There are two complementary checks:
+
+| Check | Catches | How |
+|---|---|---|
+| **Sudden** (`status`) | A sharp change in the last `window_days`: a poaching event, a herd leaving, a new species | The expected range comes **only from the baseline days before the window**. It's a two-stage block bootstrap over whole days, which keeps herd and busy-day lumpiness. `below` / `above` = outside the 90% range; `new` = never seen in the baseline |
+| **Trend** (`trend`) | A **slow** decline (or rise) | A Poisson log-linear regression of daily counts on time, with camera time as exposure and over-dispersion-corrected errors. It gives the weekly % change with a 90% interval. `declining` = the whole interval is below 0 |
+
+The sudden check misses slow declines, because a gradual fall drags the baseline down with it. That's what the trend check is for.
+
+Measured on generated data, 100 datasets each:
+
+| Situation | Sudden "below" | Trend "declining" |
+|---|---|---|
+| Steady (10 a day, or 2 a day) | 3–8% false alarms | 6–7% false alarms |
+| 10 a day, falling 30% in the last week | 80% | n/a |
+| 10 a day, falling 50% in the last week | 98% | n/a |
+| 2 a day, falling 10% a week | n/a | 38% |
+| 2 a day, falling 30% a week | n/a | 86% |
+| 2 a day, falling 60% a week | missed (baseline falls too) | 100% |
+
+**Slow declines in rare species are hard to see in 5 weeks with one camera.** That's where more Pods earn their cost.
+
+- `p_decline_10y` is the share of 10-year forecast runs that end below today's estimate (`null` where there's no forecast). It's also in `/api/simulation` as `p_decline`.
+- `forecast_monthly` is the 10-year forecast (animals) converted to expected sightings per 30 days across the zone's cameras, using the Random Encounter Model in reverse: one animal gives `v·r·(2+θ)/π / area` sightings per camera-day. It's `null` for birds and other species without a forecast.
+- Camera time comes only from heartbeats, the same as density. It needs 3+ camera-days of baseline and 6+ h in the window, otherwise `status` is `not_enough_data`.
+
+### Changes after agent-1's review (2026-11-21)
+
+- **Density no longer trusts visit times as camera time.** Without heartbeats, camera time fell to near zero, and 6 cat visits became 4.4 million cats. Now:
+  - camera time comes only from heartbeats;
+  - visits outside heartbeat-covered time are counted in `uncovered_visits`, not used;
+  - an estimate needs at least 6 h (`MIN_CAMERA_DAYS`) of camera time.
+
+  **Until agent-2's P3-3 heartbeats flow from the real Pod, real-Pod densities say `insufficient_data` ("no heartbeats …").** That's on purpose.
+- **Caching:**
+  - `/api/density`, `/api/simulation`, `/api/allocate` and `/api/sightings` are cached on the data version.
+  - The version changes with new visits, and only every 60 heartbeats.
+  - After data changes, a result is still reused for up to 10 s (30 s for `/api/allocate`), so a busy feed can't stall the dashboard. Responses carry `cached` and `data_age_s`.
+  - Measured on the laptop: allocate takes 2.4 s first, then 0.03 s; sightings take 0.9 s first, then 0.03 s.
+- **Tests:** the suite is about 25% faster here (tests skip the per-commit disk sync; the real server keeps it on).
+
 ### `GET /api/params` (built)
 
 This returns every setting the science uses, read straight from `ground/params.py`: camera range and angle; per species, travel distance, growth range, noise (with the deployed value after `NOISE_SCALE`) and loss rate; zones with area, threat level, Pods and biome; the budget actions' costs and effects; and the forecast, density and allocation settings. Use it to show "numbers used" without copying values by hand. Everything except `NOISE_SCALE` is illustrative.

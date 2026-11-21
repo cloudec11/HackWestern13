@@ -62,6 +62,7 @@ def run_forecast(inp: Inputs, seed: str) -> dict:
     rng = random.Random(zlib.crc32(seed.encode()))
     paths = []
     below = 0
+    declined = 0
     for _ in range(inp.runs):
         n = _draw_n0(rng, inp.n0, inp.n0_ci)
         r = rng.uniform(*inp.r_g)
@@ -76,6 +77,7 @@ def run_forecast(inp: Inputs, seed: str) -> dict:
             path.append(n)
             hit = hit or n < inp.threshold
         below += hit
+        declined += path[-1] < inp.n0
         paths.append(path)
     bands = {f"p{p}": [] for p in PCTS}
     for t in range(inp.years + 1):
@@ -83,7 +85,9 @@ def run_forecast(inp: Inputs, seed: str) -> dict:
         for p in PCTS:
             bands[f"p{p}"].append(round(_percentile(col, p)))
     return {"years": list(range(inp.years + 1)), **bands,
-            "p_below_threshold": round(below / inp.runs, 3), "n_runs": inp.runs}
+            "p_below_threshold": round(below / inp.runs, 3),
+            "p_decline": round(declined / inp.runs, 3),   # share of runs ending below today's estimate
+            "n_runs": inp.runs}
 
 
 def _percentile(sorted_vals: list[float], p: float) -> float:
@@ -120,7 +124,7 @@ def forecast_result(density_result: dict, threshold: float | None = None) -> dic
         flag = "not_applicable" if (density_result.get("not_applicable")
                                     or species not in params.GROWTH) else "insufficient_data"
         out.update({"years": [], **{f"p{p}": [] for p in PCTS}, "threshold": threshold or params.QUASI_EXTINCTION,
-                    "p_below_threshold": None, "n_runs": 0, flag: True, "note": reason})
+                    "p_below_threshold": None, "p_decline": None, "n_runs": 0, flag: True, "note": reason})
         return out
     fc = run_forecast(inp, f"{zone}/{species}")
     k = [round(inp.n0 * f) for f in inp.k_factor]

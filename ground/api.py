@@ -22,6 +22,7 @@ Endpoints:
     GET  /api/scene      ?pod_id=&hours=24    scene JSON for the habitat view (ground/dashboard/sim)
     GET  /api/simulation ?zone_id=&species=&threshold=50   10-year forecast fan chart (ground/simulate.py)
     GET  /api/allocate   ?budget=50000&threshold=50       budget split (ground/allocate.py), cached for the slider
+    GET  /api/sightings  ?zone_id=&species=&window_days=7&baseline_days=28   expected vs actual sightings + alerts
     GET  /health         liveness check
 
 Errors are JSON: {"detail": [{"path": ..., "error": ...}, ...]} with HTTP 422
@@ -46,7 +47,7 @@ from typing import Any, Callable, Iterator
 from urllib.parse import parse_qs
 from wsgiref.simple_server import WSGIRequestHandler, WSGIServer, make_server
 
-from ground import allocate, density, params, simulate
+from ground import allocate, density, params, sightings, simulate
 from ground.schema_check import load_validators
 
 HERE = Path(__file__).resolve().parent
@@ -85,8 +86,9 @@ def _validate(kind: str, body: Any) -> None:
 # ---- Storage ----
 
 class Store:
-    def __init__(self, db_path: str | os.PathLike):
+    def __init__(self, db_path: str | os.PathLike, durable: bool = True):
         self.db_path = str(db_path)
+        self.durable = durable
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         with self.conn() as c:
             c.executescript(SQL_PATH.read_text(encoding="utf-8"))
@@ -96,6 +98,8 @@ class Store:
         c = sqlite3.connect(self.db_path, timeout=10)
         c.row_factory = sqlite3.Row
         c.execute("PRAGMA foreign_keys = ON")
+        if not self.durable:
+            c.execute("PRAGMA synchronous = OFF")   # tests only (see create_app)
         try:
             yield c
             c.commit()
@@ -254,8 +258,13 @@ REASONS = {200: "OK", 204: "No Content", 404: "Not Found", 405: "Method Not Allo
 class App:
     """WSGI application. Routes: {(method, path): handler(environ, query) -> dict|list}."""
 
-    def __init__(self, db_path: str | os.PathLike):
-        self.store = Store(db_path)
+    def __init__(self, db_path: str | os.PathLike, max_stale_s: float | None = None, durable: bool = True):
+        self.store = Store(db_path, durable=durable)
+        # How long a cached science result may be reused after new data arrives (seconds).
+        # None = defaults per result (budget 30 s, density/forecast 10 s); 0 = always fresh (tests).
+        self.max_stale_s = max_stale_s
+        self._memo: dict = {}
+        self._memo_lock = threading.Lock()
         self.routes: dict[tuple[str, str], Callable[[dict, dict], Any]] = {
             ("GET", "/health"): lambda env, q: {"ok": True, "time_ms": now_ms()},
             ("POST", "/api/events"): self.post_events,
@@ -271,37 +280,88 @@ class App:
             ("GET", "/api/simulation"): self.get_simulation,
             ("GET", "/api/allocate"): self.get_allocate,
             ("GET", "/api/params"): lambda env, q: params_report(),
+            ("GET", "/api/sightings"): self.get_sightings,
         }
-        self._alloc_cache: tuple | None = None   # (data version, threshold, scenario table)
-        self._alloc_lock = threading.Lock()
+    HB_BUCKET = 60          # heartbeats per cache step: one heartbeat barely changes camera time
 
     def _data_version(self, c) -> tuple:
-        """Changes whenever events or heartbeats arrive, so the cached scenarios stay current."""
-        return (c.execute("SELECT COUNT(*), MAX(received_ms) FROM events").fetchone()[:]
-                + c.execute("SELECT COUNT(*), MAX(received_ms) FROM heartbeats").fetchone()[:])
+        """Changes when visits arrive, and every HB_BUCKET heartbeats (agent-1 review, finding 2:
+        keying on every heartbeat rebuilt the 2.3 s budget scenarios every 10 s)."""
+        ev = c.execute("SELECT COUNT(*), MAX(received_ms) FROM events").fetchone()
+        hb = c.execute("SELECT COUNT(*) FROM heartbeats").fetchone()[0]
+        return (ev[0], ev[1], hb // self.HB_BUCKET)
+
+    def _cached(self, name: str, key: tuple, compute: Callable[[sqlite3.Connection], Any],
+                max_stale_default: float) -> tuple[Any, bool, float]:
+        """Memoise a science result on the data version. A result is also reused for up to
+        max_stale seconds after the data changes, so a busy live feed can't make every
+        dashboard poll or slider move wait for a rebuild (agent-1 review, findings 2 and 3).
+        Returns (value, cache_hit, age_s)."""
+        max_stale = self.max_stale_s if self.max_stale_s is not None else max_stale_default
+        with self._memo_lock:              # one rebuild at a time; concurrent callers then hit the cache
+            with self.store.conn() as c:
+                version = self._data_version(c)
+                hit = self._memo.get((name, key))
+                now = time.time()
+                if hit and (hit[0] == version or now - hit[1] < max_stale):
+                    return hit[2], True, round(now - hit[1], 1)
+                value = compute(c)
+                self._memo[(name, key)] = (version, now, value)
+                return value, False, 0.0
+
+    def get_sightings(self, environ: dict, q: dict) -> dict:
+        """Expected vs actual sightings for the last window_days, from the days before it
+        (ground/sightings.py), plus the 10-year forecast in sightings and the chance of decline."""
+        window = _int_param(q, "window_days", 7, 1, 60)
+        baseline = _int_param(q, "baseline_days", 28, 3, 365)
+        zone_id, species = _str_param(q, "zone_id"), _str_param(q, "species")
+
+        def compute(c):
+            sims = {(r["zone_id"], r["species"]): r
+                    for r in simulate.simulation_results(density.density_results(c, zone_id, species))}
+            out = []
+            for z in density.zones(c):
+                if zone_id and z["zone_id"] != zone_id:
+                    continue
+                for r in sightings.zone_sightings(c, z, window, baseline, species):
+                    s = sims.get((r["zone_id"], r["species"]))
+                    r["p_decline_10y"] = s.get("p_decline") if s else None
+                    r["forecast_monthly"] = (sightings.forecast_in_sightings(s, z["area_km2"], len(z["pods"]))
+                                             if s else None)
+                    out.append(r)
+            return out
+
+        results, hit, age = self._cached("sightings", (zone_id, species, window, baseline), compute, 10)
+        alerts = [{"kind": "sudden", "zone_id": r["zone_id"], "species": r["species"], "status": r["status"],
+                   "actual": r["window"]["actual"], "expected": r["expected"], "change_pct": r["change_pct"]}
+                  for r in results if r["status"] in ("below", "above", "new")]
+        alerts += [{"kind": "trend", "zone_id": r["zone_id"], "species": r["species"],
+                    "status": r["trend"]["status"], "weekly_change_pct": r["trend"]["weekly_change_pct"],
+                    "ci90_pct": r["trend"]["ci90_pct"]}
+                   for r in results if r.get("trend") and r["trend"]["status"] in ("declining", "increasing")]
+        return {"generated_ms": now_ms(), "window_days": window, "baseline_days": baseline,
+                "cached": hit, "data_age_s": age, "alerts": alerts, "results": results,
+                "note": "Expected range is built only from the baseline days before the window. "
+                        "'below' = fewer sightings than 95% of normal windows: worth a ranger's look."}
 
     def get_allocate(self, environ: dict, q: dict) -> dict:
         budget = _int_param(q, "budget", params.DEFAULT_BUDGET, 0, 100_000_000)
         threshold = _int_param(q, "threshold", None, 1, 100_000)
-        with self._alloc_lock:             # one scenario build at a time; slider calls then hit the cache
-            with self.store.conn() as c:
-                version = self._data_version(c)
-                cached = self._alloc_cache
-                if cached and cached[0] == version and cached[1] == threshold:
-                    table, hit = cached[2], True
-                else:
-                    table, hit = allocate.scenario_table(density.density_results(c), threshold), False
-                    self._alloc_cache = (version, threshold, table)
+        table, hit, age = self._cached(
+            "allocate", (threshold,),
+            lambda c: allocate.scenario_table(density.density_results(c), threshold), 30)
         out = allocate.allocate(table, budget)
         out.update(threshold=threshold or params.QUASI_EXTINCTION, options=allocate.options(table),
-                   cached=hit, generated_ms=now_ms())
+                   cached=hit, data_age_s=age, generated_ms=now_ms())
         return out
 
     def get_simulation(self, environ: dict, q: dict) -> dict:
         threshold = _int_param(q, "threshold", None, 1, 100_000)
-        with self.store.conn() as c:
-            dens = density.density_results(c, _str_param(q, "zone_id"), _str_param(q, "species"))
-        return {"generated_ms": now_ms(), "results": simulate.simulation_results(dens, threshold)}
+        zone_id, species = _str_param(q, "zone_id"), _str_param(q, "species")
+        results, hit, age = self._cached(
+            "simulation", (zone_id, species, threshold),
+            lambda c: simulate.simulation_results(density.density_results(c, zone_id, species), threshold), 10)
+        return {"generated_ms": now_ms(), "cached": hit, "data_age_s": age, "results": results}
 
     def get_scene(self, environ: dict, q: dict) -> dict:
         """Scene JSON for agent-4's habitat view (ground/dashboard/sim): what one Pod
@@ -337,9 +397,10 @@ class App:
             return {"zones": density.zones(c)}
 
     def get_density(self, environ: dict, q: dict) -> dict:
-        with self.store.conn() as c:
-            results = density.density_results(c, _str_param(q, "zone_id"), _str_param(q, "species"))
-        return {"generated_ms": now_ms(), "results": results}
+        zone_id, species = _str_param(q, "zone_id"), _str_param(q, "species")
+        results, hit, age = self._cached("density", (zone_id, species),
+                                         lambda c: density.density_results(c, zone_id, species), 10)
+        return {"generated_ms": now_ms(), "cached": hit, "data_age_s": age, "results": results}
 
     def post_events(self, environ: dict, q: dict) -> dict:
         body = _read_json(environ)
@@ -410,8 +471,11 @@ def params_report() -> dict:
     }
 
 
-def create_app(db_path: str | os.PathLike | None = None) -> App:
-    return App(db_path or os.environ.get("POD_DB") or DEFAULT_DB)
+def create_app(db_path: str | os.PathLike | None = None, max_stale_s: float | None = None,
+               durable: bool = True) -> App:
+    """durable=False skips the per-commit disk sync: tests only. The real server keeps it
+    on, because an ack must mean the event is safely on disk."""
+    return App(db_path or os.environ.get("POD_DB") or DEFAULT_DB, max_stale_s=max_stale_s, durable=durable)
 
 
 class _ThreadingServer(ThreadingMixIn, WSGIServer):

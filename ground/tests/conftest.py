@@ -57,4 +57,4 @@ class Client:
 
 @pytest.fixture
 def client(tmp_path):
-    return Client(create_app(tmp_path / "test.sqlite3"))
+    return Client(create_app(tmp_path / "test.sqlite3", max_stale_s=0, durable=False))

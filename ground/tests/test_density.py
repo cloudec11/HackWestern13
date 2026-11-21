@@ -1,5 +1,6 @@
 """Tests for ground/density.py (P2-4): Random Encounter Model, camera effort, API."""
 import math
+from collections import Counter
 
 import pytest
 
@@ -165,3 +166,41 @@ def test_density_with_no_data(client):
     assert client.get("/api/density").json()["results"] == []
     r = client.get("/api/density", params={"species": "zebra"}).json()["results"]
     assert all(x["insufficient_data"] for x in r) and {x["zone_id"] for x in r} == {"zone-a", "zone-b", "zone-c"}
+
+
+# ---- agent-1 review finding 1: no heartbeats must not mean near-zero camera time ----
+
+def _cat_visits(pod="pod-01"):
+    return [{"pod_id": pod, "seq": i + 1, "t_start_ms": NOW + i * 80 * 60_000, "t_end_ms": NOW + i * 80 * 60_000 + 5000,
+             "class_id": 2, "species": "cat", "max_score": 0.7, "track_id": i + 1, "n_frames": 20} for i in range(6)]
+
+
+def _hb(seq, t):
+    return {"pod_id": "pod-01", "seq": seq, "t_wall_ms": t, "infer_p50_ms": 68, "infer_p99_ms": 72, "e2e_p50_ms": 90,
+            "e2e_p99_ms": 130, "temp_c": 55, "disk_free_mb": 9000, "restarts": 0, "queue_depth": 0, "last_ack_seq": 0}
+
+
+def test_no_heartbeats_gives_insufficient_data_not_millions(client):
+    assert client.post("/api/events", json={"pod_id": "pod-01", "events": _cat_visits()}).status_code == 200
+    r = client.get("/api/density", params={"zone_id": "zone-a", "species": "cat"}).json()["results"][0]
+    assert r["insufficient_data"] and r["density_per_km2"] is None and r["n0"] is None
+    assert r["uncovered_visits"] == 6 and "heartbeat" in r["note"]
+    assert client.get("/api/simulation", params={"zone_id": "zone-a"}).json()["results"][0]["p50"] == []
+
+
+def test_same_visits_with_heartbeats_give_a_sane_estimate(client):
+    client.post("/api/events", json={"pod_id": "pod-01", "events": _cat_visits()})
+    for i, t in enumerate(range(NOW - 60_000, NOW + 8 * 3_600_000 + 1, 10_000)):   # every 10 s for 8 h
+        if i % 6 == 0:                                                              # (every 60 s keeps the test quick)
+            client.post("/api/heartbeat", json=_hb(i + 1, t))
+    r = client.get("/api/density", params={"zone_id": "zone-a", "species": "cat"}).json()["results"][0]
+    assert r["uncovered_visits"] == 0 and r["camera_days"] == pytest.approx(8 / 24 + 1 / 1440, abs=0.01)
+    # agent-1's review measured about 4,600 cats with heartbeats; 18 visits/day, v=2 km/day -> ~927/km2 x 5 km2
+    assert 3000 < r["n0"] < 6000
+
+
+def test_visits_outside_heartbeat_cover_are_not_counted():
+    hb = list(range(NOW, NOW + 3_600_000 + 1, 60_000))                              # first hour only
+    unc = Counter()
+    units = effort_units({"p": hb}, [("p", NOW + 10, "cat"), ("p", NOW + 5 * 3_600_000, "cat")], uncovered=unc)
+    assert sum(u.counts["cat"] for u in units) == 1 and unc[("p", "cat")] == 1

@@ -102,13 +102,34 @@ def test_allocate_endpoint_and_cache(client):
     assert a["rows"] and {"zone_id", "intervention", "cost", "risk_before", "risk_after"} <= set(a["rows"][0])
     b = client.get("/api/allocate", params={"budget": 80000}).json()
     assert b["cached"] is True and b["spent"] >= a["spent"]           # slider reuses the scenarios
-    _load_more = client.post("/api/heartbeat", json={
+    # one heartbeat must NOT force a 2 s rebuild (agent-1 review, finding 2)
+    hb = client.post("/api/heartbeat", json={
         "pod_id": "pod-01", "seq": 99999, "t_wall_ms": NOW + 1, "infer_p50_ms": 1, "infer_p99_ms": 2,
         "e2e_p50_ms": 1, "e2e_p99_ms": 2, "temp_c": 50, "disk_free_mb": 1, "restarts": 0,
         "queue_depth": 0, "last_ack_seq": 0})
-    assert _load_more.status_code == 200
-    assert client.get("/api/allocate", params={"budget": 80000}).json()["cached"] is False   # new data
+    assert hb.status_code == 200
+    assert client.get("/api/allocate", params={"budget": 80000}).json()["cached"] is True
+    # a new visit does (tests run with max_stale_s=0)
+    ev = {"pod_id": "pod-01", "seq": 999, "t_start_ms": NOW - 5000, "t_end_ms": NOW - 1000, "class_id": 7,
+          "species": "elephant", "max_score": 0.8, "track_id": 999, "n_frames": 10}
+    assert client.post("/api/events", json={"pod_id": "pod-01", "events": [ev]}).status_code == 200
+    assert client.get("/api/allocate", params={"budget": 80000}).json()["cached"] is False
     assert client.get("/api/allocate", params={"budget": -1}).status_code == 422
+
+
+def test_cached_results_reused_briefly_while_data_streams_in(tmp_path):
+    """With the production setting, a burst of new visits doesn't make every call rebuild."""
+    from ground.api import create_app
+    from ground.tests.conftest import Client
+    c = Client(create_app(tmp_path / "x.sqlite3", max_stale_s=60, durable=False))
+    _load(c)
+    first = c.get("/api/density").json()
+    assert first["cached"] is False
+    ev = {"pod_id": "pod-01", "seq": 999, "t_start_ms": NOW - 5000, "t_end_ms": NOW - 1000, "class_id": 7,
+          "species": "elephant", "max_score": 0.8, "track_id": 999, "n_frames": 10}
+    c.post("/api/events", json={"pod_id": "pod-01", "events": [ev]})
+    again = c.get("/api/density").json()
+    assert again["cached"] is True and again["data_age_s"] < 60 and again["results"] == first["results"]
 
 
 def test_allocate_with_no_data(client):
