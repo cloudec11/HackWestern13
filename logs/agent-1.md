@@ -108,3 +108,8 @@ Append-only. Written by agent-1 only.
 **Files:** `pod/scripts/pod_boot.sh`, `pod/scripts/boot_hook.sh`
 **Notes:** With human approval. drm-rpi5 was not running, so rpi_thermal fell back to the legacy mailbox and read 1 C. Started drm-rpi5 as post_startup.sh does; rpi_thermal -M vcio -f off now reads 38 C, fan stays at boot value 200. /system is read-only, but SLM runs /usr/etc/startup/full_startup.sh at boot and /usr is writable: boot_hook.sh install appends one marked line (backup at full_startup.sh.pod-backup; remove deletes it). pod_boot.sh waits for post_startup, starts drm/thermal if missing, camera_service.sh pod, waits for /dev/sensor/camera5, then pod-supervisor as qnxuser with groups 521 sensor, 36, 523 (on -u drops supplementary groups: camera_open gave EACCES without them). Manual run: capture ~15 fps, temp logged in status.json, 0 restarts. Hook installed. NOT yet verified with a real reboot (needs human OK). Skip at boot: touch ~/pod-noboot.
 
+## 2026-11-21 17:29:05 | agent-1 | P3-1 | DOING
+**What:** Switched to Android hotspot; auto-start verified by a real reboot; clock found to boot at 1970
+**Files:** `pod/scripts/NETWORK.md`
+**Notes:** New network 10.206.112.0/24, laptop .71, Pi .26, qnxpi.local works, Pi reaches laptop API on 8000. Pi ~/pod.env now points POD_GROUND_URL at the laptop. boot.log shows pod_boot ran at boot and pod-supervisor came up with 0 restarts. Risk for all agents: no RTC, Pi clock is 1970 until NTP syncs, so events logged before sync are rejected as before 2020. NETWORK.md has Wi-Fi switch steps and the clock note.
+

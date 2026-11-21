@@ -15,6 +15,27 @@ Goal: the Pi (Pod) and the laptop (ground station) can always reach each other, 
 
 Hotspot addresses are leased and can change. Do not hard-code them.
 
+**Current network (since 2026-11-21 evening): Android hotspot**, `10.206.112.0/24`.
+Laptop `10.206.112.71`, Pi `10.206.112.26`. Windows marked it Public; inbound TCP 8000 still worked.
+`qnxpi.local` works on both hotspots.
+
+## Switching Wi-Fi
+
+1. Add the new network to the Pi **before** turning off the old one, or the Pi drops off Wi-Fi.
+   Edit `/boot/wpa_supplicant.conf` (FAT boot partition): at every boot `copy_settings.sh` copies it
+   over `/data/var/etc/settings/wpa_supplicant.conf` if it is newer. Keep one `network={...}` block
+   per hotspot so the Pi joins whichever is on. Use WPA2, not WPA3-only.
+2. Laptop: `ipconfig` for its new IP. Pi: `ifconfig bcm0`, or just use `qnxpi.local`.
+3. Pi: `echo 'POD_GROUND_URL=http://<laptop-ip>:8000' > ~/pod.env`, then restart the Pod:
+   `slay pod-supervisor; sudo sh ~/pod-deploy/pod/scripts/pod_boot.sh`. (`pod_boot.sh` reads `~/pod.env` at boot.)
+4. From the Pi, check `http://<laptop-ip>:8000/health` answers.
+
+## Clock
+
+The Pi has no clock battery: it boots at 1970-01-01 and only gets the real time from NTP once it
+has internet. Events stamped before 2020 are rejected by the ground schema, so pod-log skips them.
+The hotspot must have internet at boot, or the clock must be set before events are logged.
+
 ## Primary: shared Wi-Fi / hotspot
 
 1. Put the laptop and Pi on the same Wi-Fi (the hotspot).
@@ -56,5 +77,6 @@ curl http://192.168.50.1:8000/api/summary   (from the Pi, once agent-3's API is 
 
 ## Status
 
-- Wi-Fi path: verified (SSH, git clone over the hotspot).
+- Wi-Fi path: verified (SSH, git clone over the hotspot). Verified again on the Android hotspot,
+  including Pi to laptop API.
 - Ethernet fallback: written, **not yet tested** (no cable connected, and it needs `sudo` on the Pi).
