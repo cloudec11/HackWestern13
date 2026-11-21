@@ -1,0 +1,22 @@
+# Pod label table v1 (agent-2). Source of truth for class_id in shared/pod_msgs.h
+# and species in shared/event_schema.json.
+#
+# class_id     pod class id (uint16). 0 = unknown. Never reuse or renumber an id.
+# species      lower-case name, matches ^[a-z][a-z_]*$ (event_schema.json)
+# model_index  raw class index output by the COCO detectors in models/
+#              (SSD MobileNet v1 quant and EfficientDet-Lite0 share this numbering)
+#
+# Any model_index not listed here is dropped in pod-infer. Person (model_index 0)
+# is deliberately absent and must never be added.
+class_id,species,model_index
+0,unknown,
+1,bird,15
+2,cat,16
+3,dog,17
+4,horse,18
+5,sheep,19
+6,cow,20
+7,elephant,21
+8,bear,22
+9,zebra,23
+10,giraffe,24

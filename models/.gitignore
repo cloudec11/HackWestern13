@@ -1,0 +1,3 @@
+# Model binaries are downloaded by fetch_models.sh, not committed.
+*.tflite
+*.zip

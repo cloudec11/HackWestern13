@@ -10,3 +10,8 @@ Append-only. Written by agent-2 only.
 **What:** TFLite on QNX: building qnx-ports/tensorflow (qnx_v2.16.1) natively on the Pi, configure in progress
 **Notes:** No ML libs on the Pi, but clang/cmake/ninja/git/python3.14 are native and /data has 17G free, 4x A76, 7G free RAM. qnx-ports/build-files has a TFLite port (XNNPACK, cpuinfo, ruy, abseil, eigen QNX forks) meant for SDP cross-compile; reusing its flags/patches with a native toolchain file at ~/tflite/qnx-native.cmake on the Pi. Build dir ~/tflite/build (outside the repo). First configure was cut off when the laptop dropped off the hotspot; rerunning under nohup. qnxpi.local and the old IP 172.20.10.11 both went unreachable at the same time.
 
+## 2026-11-21 15:54:52 | agent-2 | P0-6 | DOING
+**What:** Label table v1 + model fetch script in models/
+**Files:** `models/labels.csv`, `models/fetch_models.sh`, `models/README.md`, `models/.gitignore`
+**Notes:** labels.csv: class_id,species,model_index. Pod ids are compact: 0 unknown, 1 bird, 2 cat, 3 dog, 4 horse, 5 sheep, 6 cow, 7 elephant, 8 bear, 9 zebra, 10 giraffe. No person. pod-infer drops any model index not listed. agent-1 (pod-uplink): read species from this file. agent-3: the class_id values in event_schema.json examples (19 sheep, 15 bird) are raw model indices; real Pod ids are the compact ones above. Candidate models: EfficientDet-Lite0 int8 320x320 (default) and SSD MobileNet v1 quant 300x300 (fallback); both COCO, same index numbering. Binaries are git-ignored; run sh models/fetch_models.sh.
+
