@@ -88,7 +88,8 @@ struct State {
     uint32_t width = 0, height = 0;
     double fps = 0;
     pod_detections_t dets{};            /* newest detections */
-    int64_t dets_rx_ns = 0;             /* when they arrived, 0 = never */
+    int64_t dets_rx_ns = 0;             /* when any message arrived (also empty ones), 0 = never */
+    int64_t dets_hit_ns = 0;            /* when dets last held a detection: boxes are kept for kHoldNs */
     uint64_t dets_rx = 0, forwarded = 0, forward_fail = 0, peek_miss = 0;
     int clients = 0;
 };
@@ -209,8 +210,18 @@ void dets_loop(const Options& o, State& st) {
         if (rx.receive(&d, 200) != 1) continue;
         bool fwd = tx && tx->send(d);           /* forward first: pod-track must not wait on drawing */
         std::lock_guard<std::mutex> lk(st.mu);
-        st.dets = d;
-        st.dets_rx_ns = mono_ns();
+        const int64_t now = mono_ns();
+        /* pod-infer sends a message for every frame, empty when nothing is seen. A weak detection (a cat on a
+         * phone screen) shows up in only some frames, so an empty message would wipe its box at once and it
+         * would flash for a fraction of a second. Keep the last non-empty result for kHoldNs. */
+        constexpr int64_t kHoldNs = 800000000LL;
+        if (d.n_detections > 0) {
+            st.dets = d;
+            st.dets_hit_ns = now;
+        } else if (now - st.dets_hit_ns >= kHoldNs) {
+            st.dets = d;
+        }
+        st.dets_rx_ns = now;
         st.dets_rx++;
         if (tx) (fwd ? st.forwarded : st.forward_fail)++;
     }
