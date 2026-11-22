@@ -1,5 +1,7 @@
 # The Pod: real-time wildlife sensing on QNX
 
+![Pod Robot](rice_farmer.jpg)
+
 **Hack Western 13 · QNX prize category**
 
 The Pod is a Raspberry Pi 5 running **QNX 8.0** with a USB webcam. It spots animals on the device with an AI detector, turns video into tiny "an animal visited" records, and sends them to a ground station. The ground station estimates how many animals live in each zone, projects the next 10 years, flags sudden drops and slow declines, and suggests where conservation money cuts extinction risk the most.
