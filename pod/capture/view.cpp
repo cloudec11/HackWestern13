@@ -274,7 +274,7 @@ bool send_all(int fd, const void* p, size_t n) {
 
 bool send_text(int fd, const char* type, const std::string& body) {
     std::string h = "HTTP/1.0 200 OK\r\nContent-Type: " + std::string(type) +
-                    "\r\nCache-Control: no-store\r\nContent-Length: " + std::to_string(body.size()) + "\r\n\r\n";
+                    "\r\nCache-Control: no-store\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: " + std::to_string(body.size()) + "\r\n\r\n";
     return send_all(fd, h.data(), h.size()) && send_all(fd, body.data(), body.size());
 }
 
