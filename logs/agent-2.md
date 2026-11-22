@@ -68,3 +68,7 @@ Append-only. Written by agent-2 only.
 **Files:** `TASKS.md`
 **Notes:** Docs audit: every agent-2 task has log entries; every pod-infer/pod-track option is in pod/infer/README.md and pod/track/README.md; models/README.md and pod/infer/tflite/README.md are current. Open decisions recorded in the P2-1 notes: --max-visit for the demo (off by default) and maybe --min-frames 5 / --min-score 0.5 against weak false positives. Pi-side test copy of my code lives in ~/agent2 (not the deploy dir); test images in ~/agent2/testimg.
 
+## 2026-11-21 23:15:27 | agent-2 | P3-2 | DOING
+**What:** Claiming my half of P3-2: per-frame latency log in pod-infer, latency report (histograms, comparison table, JSON for agent-4), Pi bench of baseline / CPU hog / hog + SCHED_FIFO
+**Notes:** Started before P3-1 is DONE (human OK). Everything lives in pod/infer/. agent-1's half: the demo wrapper in pod/scripts and the supervisor priorities, from these numbers. The Pi bench needs exclusive use of the frame ring for a few minutes, so I will ask before pausing the supervised pod-infer.
+

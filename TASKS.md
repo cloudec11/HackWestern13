@@ -77,7 +77,7 @@ Claim a task by setting `DOING` and committing that change **before** starting w
 | ID | Task | Agent | Status | Depends on |
 |----|------|-------|--------|------------|
 | P3-1 | `pod-supervisor`: heartbeats (500 ms, restart after 3 misses), SCHED_FIFO priorities, thermal logging | agent-1 | DOING | P2-3 |
-| P3-2 | Stress script: low-priority CPU hog, latency histograms with and without load | agent-1 + agent-2 | TODO | P3-1 |
+| P3-2 | Stress script: low-priority CPU hog, latency histograms with and without load | agent-1 + agent-2 | DOING (agent-2 half) | P3-1 |
 | P3-3 | Pod heartbeat message (p50/p99, temp, restarts, disk, last ack seq) | agent-2 | DONE | P3-1 |
 | P3-4 | Budget allocator (`allocate.py`) + population fan chart data | agent-3 | REVIEW | P2-5 |
 | P3-5 | Dashboard: latency histogram, fan chart, budget table with slider | agent-4 | TODO | P3-3, P3-4 |
