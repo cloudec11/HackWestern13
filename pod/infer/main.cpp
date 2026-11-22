@@ -25,6 +25,13 @@
  * --health-out (P3-3): every 10 s, write the Pod health fields for pod-uplink's heartbeat
  * (see heartbeat.h). Off unless given. The file is removed on exit and whenever there is
  * nothing honest to report (no frames in 60 s, no temperature).
+ *
+ * --clip-model models/clip_vision.tflite (prototype 1): identify the animal with CLIP instead of
+ * trusting the COCO class (see clip.h). The detector then only says WHERE to look; a worker thread
+ * at normal priority crops that region from the full-resolution frame, runs CLIP on the newest
+ * frame it can, and votes (6 of the last 10 checks). While an animal is confirmed, every frame
+ * sent to pod-track carries it (class_id from labels.csv, box = where it was last seen), so
+ * pod-track makes one visit per animal. The detector loop keeps its priority and frame rate.
  */
 #include <pthread.h>
 #include <sched.h>
@@ -33,18 +40,23 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <atomic>
+#include <condition_variable>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <memory>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "tensorflow/lite/interpreter.h"
 #include "tensorflow/lite/kernels/register.h"
 #include "tensorflow/lite/model.h"
 
+#include "clip.h"
 #include "dets_mq.h"
 #include "health.h"
 #include "heartbeat.h"
@@ -86,6 +98,15 @@ struct Options {
     bool quiet = false;
     bool observe = false;
     std::string latency_log;
+    /* CLIP (prototype 1): off unless --clip-model is given */
+    std::string clip_model;
+    std::string clip_labels = "models/clip/labels.txt";
+    std::string clip_text = "models/clip/text.f32";
+    float clip_min_prob = 0.45f;     /* a check counts as a vote at this probability */
+    float clip_region = 0.3f;        /* detector score to look closer at a region */
+    int clip_need = 6, clip_window = 10;
+    int clip_threads = 1;
+    int clip_prio = 10;              /* worker thread priority (QNX normal = 10), below the detector */
 };
 
 bool parse(int argc, char** argv, Options& o) {
@@ -108,12 +129,23 @@ bool parse(int argc, char** argv, Options& o) {
         else if (a == "--quiet") o.quiet = true;
         else if (a == "--observe") o.observe = true;
         else if (a == "--latency-log" && (v = next())) o.latency_log = v;
+        else if (a == "--clip-model" && (v = next())) o.clip_model = v;
+        else if (a == "--clip-labels" && (v = next())) o.clip_labels = v;
+        else if (a == "--clip-text" && (v = next())) o.clip_text = v;
+        else if (a == "--clip-min-prob" && (v = next())) o.clip_min_prob = static_cast<float>(std::atof(v));
+        else if (a == "--clip-region" && (v = next())) o.clip_region = static_cast<float>(std::atof(v));
+        else if (a == "--clip-need" && (v = next())) o.clip_need = std::atoi(v);
+        else if (a == "--clip-window" && (v = next())) o.clip_window = std::atoi(v);
+        else if (a == "--clip-threads" && (v = next())) o.clip_threads = std::atoi(v);
+        else if (a == "--clip-prio" && (v = next())) o.clip_prio = std::atoi(v);
         else {
             std::fprintf(stderr,
                 "usage: pod-infer [--model F] [--labels F] [--shm NAME] [--dets-mq NAME] [--threads N] [--prio N]\n"
                 "                 [--min-score S] [--seconds N] [--stats N] [--quiet] [--ppm IMAGE]\n"
                 "                 [--health-out FILE] [--status SUPERVISOR_STATUS_JSON] [--observe]\n"
-                "                 [--latency-log FILE.csv]\n");
+                "                 [--latency-log FILE.csv]\n"
+                "                 [--clip-model F] [--clip-labels F] [--clip-text F] [--clip-min-prob P]\n"
+                "                 [--clip-region S] [--clip-need N] [--clip-window N] [--clip-threads N] [--clip-prio N]\n");
             return false;
         }
     }
@@ -216,6 +248,26 @@ struct Detector {
 
     bool invoke() { return interp->Invoke() == kTfLiteOk; }
 
+    /* CLIP mode: the best region worth a closer look (an animal the table knows, or something that
+     * may hold an animal picture: phone, TV, laptop, book, teddy bear). Person is never chosen. */
+    bool best_region(const pod::LabelTable& labels, float min_score, pod::clip::Box* b) const {
+        int n = static_cast<int>(*count + 0.5f);
+        if (n > max_n) n = max_n;
+        for (int i = 0; i < n; ++i) {
+            if (scores[i] < min_score) continue;
+            const int idx = static_cast<int>(classes[i] + 0.5f);
+            if (idx == 0) continue;                                   /* person */
+            if (labels.class_for(idx) == pod::kDrop && !pod::clip::is_picture_holder(idx)) continue;
+            const float* bx = boxes + 4 * i;
+            const float y0 = std::clamp(bx[0], 0.0f, 1.0f), x0 = std::clamp(bx[1], 0.0f, 1.0f);
+            const float y1 = std::clamp(bx[2], 0.0f, 1.0f), x1 = std::clamp(bx[3], 0.0f, 1.0f);
+            if (x1 - x0 < 0.03f || y1 - y0 < 0.03f) continue;          /* too small to say anything */
+            *b = pod::clip::Box{x0, y0, x1, y1};
+            return true;
+        }
+        return false;
+    }
+
     /* Keep animals above min_score, best first (the model already sorts by score). */
     void collect(const pod::LabelTable& labels, float min_score, pod_detections_t* out) const {
         int n = static_cast<int>(*count + 0.5f);
@@ -234,6 +286,165 @@ struct Detector {
             d.x = x0; d.y = y0; d.w = x1 - x0; d.h = y1 - y0;
             d.score = scores[i];
             d.class_id = static_cast<uint16_t>(cls);
+        }
+    }
+};
+
+
+/* ---- CLIP worker (prototype 1): identifies the animal off the detector's critical path ---- */
+
+struct ClipWorker {
+    const Options& o;
+    pod::clip::Text text;
+    std::vector<int> class_of_label;     /* CLIP label row -> Pod class_id (labels.csv), -1 = never an animal */
+    pod::clip::Voter voter;
+
+    std::thread th;
+    std::mutex mu;
+    std::condition_variable cv;
+    bool have_job = false, busy = false, stop = false;
+    std::atomic<bool> ready{false}, failed{false};
+    std::vector<uint8_t> job;            /* YUYV frame for the next check */
+    uint32_t jw = 0, jh = 0, jstride = 0;
+    pod::clip::Box jbox{};
+
+    /* results, under mu */
+    int present = -1;                    /* CLIP label row of the confirmed animal, or -1 */
+    pod::clip::Box present_box{};
+    float present_prob = 0.0f;
+    uint64_t checks = 0;
+    std::vector<int64_t> check_ns;       /* CLIP run times for the stats window */
+
+    explicit ClipWorker(const Options& opt) : o(opt) {}
+    ~ClipWorker() { shutdown(); }   /* every exit path joins the thread */
+
+    bool init(const pod::LabelTable& labels) {
+        std::string err;
+        if (!text.load(o.clip_labels, o.clip_text, &err)) { std::fprintf(stderr, "pod-infer: clip: %s\n", err.c_str()); return false; }
+        voter.need = o.clip_need;
+        voter.window = o.clip_window;
+        int animals = 0;
+        for (const std::string& name : text.labels) {
+            int cls = -1;
+            if (name != "_none")
+                for (size_t c = 1; c < labels.species.size(); ++c)
+                    if (labels.species[c] == name) { cls = static_cast<int>(c); break; }
+            if (name != "_none" && cls < 0)
+                std::fprintf(stderr, "pod-infer: clip: '%s' is not in the label table, it will never be reported\n", name.c_str());
+            if (cls >= 0) animals++;
+            class_of_label.push_back(cls);
+        }
+        std::printf("pod-infer: CLIP %s, %d animals, vote %d of %d at p >= %.2f, region score %.2f\n",
+                    o.clip_model.c_str(), animals, o.clip_need, o.clip_window,
+                    static_cast<double>(o.clip_min_prob), static_cast<double>(o.clip_region));
+        th = std::thread([this] { run(); });
+        return true;
+    }
+
+    bool wants_frame() {
+        std::lock_guard<std::mutex> l(mu);
+        return ready && !have_job && !busy;
+    }
+
+    void submit(std::vector<uint8_t>& frame, uint32_t w, uint32_t h, uint32_t stride, pod::clip::Box b) {
+        {
+            std::lock_guard<std::mutex> l(mu);
+            job.swap(frame);
+            jw = w; jh = h; jstride = stride; jbox = b;
+            have_job = true;
+        }
+        cv.notify_one();
+    }
+
+    /* The confirmed animal as a detection, or false when none is in view. */
+    bool current(pod_detection_t* d) {
+        std::lock_guard<std::mutex> l(mu);
+        if (present < 0 || class_of_label[static_cast<size_t>(present)] < 0) return false;
+        std::memset(d, 0, sizeof *d);
+        d->x = present_box.x0; d->y = present_box.y0;
+        d->w = present_box.x1 - present_box.x0; d->h = present_box.y1 - present_box.y0;
+        d->score = present_prob;
+        d->class_id = static_cast<uint16_t>(class_of_label[static_cast<size_t>(present)]);
+        return true;
+    }
+
+    void shutdown() {
+        { std::lock_guard<std::mutex> l(mu); stop = true; }
+        cv.notify_one();
+        if (th.joinable()) th.join();
+    }
+
+    void run() {
+        /* Below the detector: the detector keeps its real-time priority, CLIP gets what is left. */
+        if (o.clip_prio > 0) {
+            sched_param sp{};
+            sp.sched_priority = o.clip_prio;
+            pthread_setschedparam(pthread_self(), SCHED_RR, &sp);   /* may fail off QNX; then inherited */
+        }
+        auto model = tflite::FlatBufferModel::BuildFromFile(o.clip_model.c_str());
+        tflite::ops::builtin::BuiltinOpResolver resolver;
+        std::unique_ptr<tflite::Interpreter> interp;
+        if (!model) { std::fprintf(stderr, "pod-infer: clip: cannot load %s\n", o.clip_model.c_str()); failed = true; return; }
+        tflite::InterpreterBuilder builder(*model, resolver);
+        builder.SetNumThreads(o.clip_threads);
+        if (builder(&interp) != kTfLiteOk || !interp || interp->AllocateTensors() != kTfLiteOk) {
+            std::fprintf(stderr, "pod-infer: clip: interpreter build failed\n"); failed = true; return;
+        }
+        const TfLiteTensor* in = interp->input_tensor(0);
+        const TfLiteTensor* out = interp->output_tensor(0);
+        if (in->type != kTfLiteFloat32 || in->dims->size != 4 || in->dims->data[1] != pod::clip::kSize ||
+            in->dims->data[2] != pod::clip::kSize || in->dims->data[3] != 3 || out->type != kTfLiteFloat32 ||
+            out->dims->data[out->dims->size - 1] != pod::clip::kDim) {
+            std::fprintf(stderr, "pod-infer: clip: expected float [1,224,224,3] -> [1,512]\n"); failed = true; return;
+        }
+        float* input = interp->typed_input_tensor<float>(0);
+        ready = true;
+        std::vector<uint8_t> frame;
+        while (true) {
+            uint32_t w, h, stride;
+            pod::clip::Box b;
+            {
+                std::unique_lock<std::mutex> l(mu);
+                cv.wait(l, [this] { return have_job || stop; });
+                if (stop) return;
+                frame.swap(job);
+                w = jw; h = jh; stride = jstride; b = jbox;
+                have_job = false; busy = true;
+            }
+            const int64_t t0 = mono_ns();
+            pod::clip::crop_to_input(frame.data(), w, h, stride, b, input);
+            if (interp->Invoke() != kTfLiteOk) { std::fprintf(stderr, "pod-infer: clip: Invoke failed\n"); failed = true; return; }
+            const float* e = interp->typed_output_tensor<float>(0);
+            float emb[pod::clip::kDim], norm = 0.0f;
+            for (int k = 0; k < pod::clip::kDim; ++k) norm += e[k] * e[k];
+            norm = std::sqrt(norm) + 1e-9f;
+            for (int k = 0; k < pod::clip::kDim; ++k) emb[k] = e[k] / norm;
+            float prob = 0.0f;
+            const int best = pod::clip::classify(text, emb, &prob);
+            const bool animal = class_of_label[static_cast<size_t>(best)] >= 0;
+            const int vote = (animal && prob >= o.clip_min_prob) ? best : -1;
+            const int64_t t1 = mono_ns();
+            const bool changed = voter.update(vote, static_cast<double>(t1) / 1e9);
+            {
+                std::lock_guard<std::mutex> l(mu);
+                present = voter.present;
+                if (vote >= 0 && vote == voter.present) { present_box = b; present_prob = prob; }
+                checks++;
+                check_ns.push_back(t1 - t0);
+                busy = false;
+            }
+            if (changed)
+                std::printf("pod-infer: CLIP: %s in view (p %.2f, %.0f ms per check)\n",
+                            text.labels[static_cast<size_t>(voter.present)].c_str(), static_cast<double>(prob),
+                            static_cast<double>(t1 - t0) / 1e6);
+            else if (!o.quiet) {
+                int leader = -1;
+                const int n = voter.progress(&leader);
+                std::printf("pod-infer: CLIP check: %s %.2f%s (votes %d/%d for %s)\n", text.labels[static_cast<size_t>(best)].c_str(),
+                            static_cast<double>(prob), vote >= 0 ? "" : " (no vote)", n, o.clip_need,
+                            leader >= 0 ? text.labels[static_cast<size_t>(leader)].c_str() : "-");
+            }
+            std::fflush(stdout);
         }
     }
 };
@@ -333,6 +544,14 @@ int main(int argc, char** argv) {
     if (!det.load(o)) return 1;
     if (!o.ppm.empty()) return run_ppm(o, det, labels);
 
+    std::unique_ptr<ClipWorker> clipw;
+    if (!o.clip_model.empty()) {
+        clipw.reset(new ClipWorker(o));
+        if (!clipw->init(labels)) return 1;
+    }
+    std::vector<uint8_t> clip_frame;     /* full-resolution copy for the CLIP worker */
+    bool clip_staged = false;
+
     pod::HealthBeat hb;
     pod::DetsSender tx(o.dets_mq.c_str());
     const bool send_dets = !o.dets_mq.empty();
@@ -413,6 +632,12 @@ int main(int argc, char** argv) {
         r.t_capture_ns = f->t_capture_ns;
         const uint64_t skipped = (last && f->seq > last + 1) ? f->seq - last - 1 : 0;
         pod::yuyv_to_rgb_resize(pixels, f->width, f->height, f->stride, det.input, det.in_w, det.in_h);
+        clip_staged = false;
+        if (clipw && clipw->wants_frame()) {          /* only when the worker is free: ~0.1 ms copy */
+            clip_frame.assign(pixels, pixels + static_cast<size_t>(f->stride) * f->height);
+            clip_staged = true;
+        }
+        const uint32_t fw = f->width, fh = f->height, fstride = f->stride;
         last = f->seq;
         if (!o.observe) ring.ring.release();  /* frame copied: give the slot back before the slow part */
         const int64_t t1 = mono_ns();
@@ -420,6 +645,17 @@ int main(int argc, char** argv) {
         if (!det.invoke()) { std::fprintf(stderr, "pod-infer: Invoke failed\n"); return 1; }
         r.t_infer_done_ns = mono_ns();
         det.collect(labels, o.min_score, &r);
+        if (clipw) {
+            if (clipw->failed) { std::fprintf(stderr, "pod-infer: CLIP worker failed, stopping\n"); return 1; }
+            if (clip_staged) {
+                pod::clip::Box b;
+                if (!det.best_region(labels, o.clip_region, &b)) b = pod::clip::centre_box();
+                clipw->submit(clip_frame, fw, fh, fstride, b);
+            }
+            /* CLIP decides what the animal is: report only the confirmed one (or nothing). */
+            r.n_detections = 0;
+            if (clipw->current(&r.det[0])) r.n_detections = 1;
+        }
         const bool unsent = send_dets && !tx.send(r);   /* every frame, even with 0 detections */
         hb.beat();
         health.add(r.t_infer_done_ns, r.t_infer_done_ns - t1, r.t_infer_done_ns - r.t_capture_ns);
@@ -446,11 +682,21 @@ int main(int argc, char** argv) {
 
         if (o.stats > 0 && r.t_infer_done_ns - t_win >= static_cast<int64_t>(o.stats) * 1000000000LL) {
             print_stats("last", win, static_cast<double>(r.t_infer_done_ns - t_win) / 1e9);
+            if (clipw) {
+                std::vector<int64_t> v;
+                uint64_t checks;
+                { std::lock_guard<std::mutex> l(clipw->mu); v.swap(clipw->check_ns); checks = clipw->checks; }
+                std::printf("pod-infer:   clip  %zu checks (%.1f/s), p50 %6.1f  p99 %6.1f ms, total %llu\n", v.size(),
+                            static_cast<double>(v.size()) / (static_cast<double>(r.t_infer_done_ns - t_win) / 1e9),
+                            pct_ms(v, 0.5), pct_ms(v, 0.99), static_cast<unsigned long long>(checks));
+                std::fflush(stdout);
+            }
             win.clear();
             t_win = r.t_infer_done_ns;
         }
     }
     print_stats("total", total, static_cast<double>(mono_ns() - t_start) / 1e9);
+    if (clipw) clipw->shutdown();
     health.remove();   /* no stale health numbers after we stop */
     if (lat_log) std::fclose(lat_log);
     return 0;

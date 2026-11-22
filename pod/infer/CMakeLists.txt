@@ -16,6 +16,7 @@ set(POD_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 include_directories(${POD_ROOT}/shared ${POD_ROOT}/pod/ipc ${POD_ROOT}/pod/track ${CMAKE_CURRENT_SOURCE_DIR})
 
 add_executable(infer_test infer_test.cpp)
+add_executable(clip_test clip_test.cpp)   # CLIP crop + voting tests (prototype 1), no TFLite
 
 set(TFLITE_ROOT "$ENV{HOME}/tflite" CACHE PATH "TFLite work dir from build_tflite.sh")
 set(TFLITE_BUILD ${TFLITE_ROOT}/build)
