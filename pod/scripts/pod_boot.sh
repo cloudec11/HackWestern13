@@ -14,9 +14,13 @@
 # Logs:                  ~/pod-deploy/pod-data/boot.log and supervisor.log
 POD_USER=qnxuser
 POD_UID=1000
-# uid:gid,supplementary groups. 521 = sensor (the camera nodes are rw only for it), 36 = screen, 523 = mbox.
+# uid:gid,supplementary groups. 521 = sensor (the camera nodes are rw only for it), 36 = screen, 523 = mbox,
+# 2001 = abuild: /etc/sudoers.d/01-abuild gives this group NOPASSWD sudo (group 27 "sudo" still asks for a
+# password). pod-infer needs I/O privilege, so pod.conf starts it with "sudo -n". That means every process
+# the supervisor starts can use root through sudo. Narrower option: add a sudoers.d rule for just
+# pod-infer and drop 2001 here.
 # "on -u" drops the user's other groups unless they are listed here.
-POD_IDS=1000:1000,521,36,523
+POD_IDS=1000:1000,521,36,523,2001
 POD_HOME=/data/home/$POD_USER
 DIR=$POD_HOME/pod-deploy
 DATA=$DIR/pod-data

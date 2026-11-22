@@ -157,10 +157,18 @@ void start(Child& c) {
     sigfillset(&all);
     posix_spawnattr_setsigmask(&attr, &none);
     posix_spawnattr_setsigdefault(&attr, &all);
-    if (c.prio > 0) {
+    /* prio 0 must mean "normal", not "inherit": the supervisor itself runs at SCHED_FIFO 40, so a child spawned
+     * without an explicit policy inherited FIFO 40, above pod-capture (30) and the camera service. pod-infer
+     * (3 busy threads) then starved the camera: capture stalled for seconds and was restarted in a loop. */
+    {
         sched_param sp{};
-        sp.sched_priority = c.prio;
-        posix_spawnattr_setschedpolicy(&attr, SCHED_FIFO);
+        if (c.prio > 0) {
+            sp.sched_priority = c.prio;
+            posix_spawnattr_setschedpolicy(&attr, SCHED_FIFO);
+        } else {
+            sp.sched_priority = 10;
+            posix_spawnattr_setschedpolicy(&attr, SCHED_OTHER);
+        }
         posix_spawnattr_setschedparam(&attr, &sp);
         flags |= POSIX_SPAWN_SETSCHEDULER;
     }
