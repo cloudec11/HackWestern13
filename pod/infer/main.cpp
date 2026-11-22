@@ -18,6 +18,10 @@
  *   infer = model run (Invoke)
  *   e2e   = t_infer_done_ns - t_capture_ns (camera callback -> detections ready)
  *
+ * --observe: read frames with Ring::peek_latest (read-only copy) instead of being the ring's
+ * consumer, so a second pod-infer can run next to the real one for tests. Adds up to 5 ms
+ * of polling delay to e2e. Use with --dets-mq "" so it does not feed pod-track twice.
+ *
  * --health-out (P3-3): every 10 s, write the Pod health fields for pod-uplink's heartbeat
  * (see heartbeat.h). Off unless given. The file is removed on exit and whenever there is
  * nothing honest to report (no frames in 60 s, no temperature).
@@ -80,6 +84,7 @@ struct Options {
     int seconds = 0;
     int stats = 5;
     bool quiet = false;
+    bool observe = false;
 };
 
 bool parse(int argc, char** argv, Options& o) {
@@ -100,11 +105,12 @@ bool parse(int argc, char** argv, Options& o) {
         else if (a == "--seconds" && (v = next())) o.seconds = std::atoi(v);
         else if (a == "--stats" && (v = next())) o.stats = std::atoi(v);
         else if (a == "--quiet") o.quiet = true;
+        else if (a == "--observe") o.observe = true;
         else {
             std::fprintf(stderr,
                 "usage: pod-infer [--model F] [--labels F] [--shm NAME] [--dets-mq NAME] [--threads N] [--prio N]\n"
                 "                 [--min-score S] [--seconds N] [--stats N] [--quiet] [--ppm IMAGE]\n"
-                "                 [--health-out FILE] [--status SUPERVISOR_STATUS_JSON]\n");
+                "                 [--health-out FILE] [--status SUPERVISOR_STATUS_JSON] [--observe]\n");
             return false;
         }
     }
@@ -337,6 +343,9 @@ int main(int argc, char** argv) {
     std::fflush(stdout);
     const char* last_health_problem = nullptr;
 
+    pod_frame_hdr_t obs_hdr{};
+    std::vector<uint8_t> obs_buf(o.observe ? ring.ring.max_payload() : 0);
+    if (o.observe) std::printf("pod-infer: OBSERVER mode: read-only frame copies, the ring's real consumer is untouched\n");
     Window win, total;
     uint64_t last = 0;
     const int64_t t_start = mono_ns();
@@ -354,25 +363,46 @@ int main(int argc, char** argv) {
             std::fflush(stdout);
             last_health_problem = why;
         }
-        if (!ring.ring.wait(500) && mono_ns() - t_last_frame > 2000000000LL) {
-            /* No frames for 2 s: pod-capture may have restarted with a new ring. */
-            if (open_ring(ring, o.shm, 1)) last = 0;
-            t_last_frame = mono_ns();
-            continue;
+        const pod_frame_hdr_t* f = nullptr;
+        const uint8_t* pixels = nullptr;
+        int64_t t0 = 0;
+        if (!o.observe) {
+            if (!ring.ring.wait(500) && mono_ns() - t_last_frame > 2000000000LL) {
+                /* No frames for 2 s: pod-capture may have restarted with a new ring. */
+                if (open_ring(ring, o.shm, 1)) last = 0;
+                t_last_frame = mono_ns();
+                continue;
+            }
+            f = ring.ring.acquire_latest(last);
+            if (!f) continue;
+            t0 = mono_ns();
+            if (!frame_ok(f)) { ring.ring.release(); continue; }
+            pixels = ring.ring.payload(f);
+        } else {
+            /* Observer: copy the newest frame without claiming a slot or the pulse, so the
+             * real consumer is not disturbed. No pulse to sleep on, so poll every 5 ms. */
+            if (!ring.ring.peek_latest(last, &obs_hdr, obs_buf.data(), obs_buf.size())) {
+                if (mono_ns() - t_last_frame > 2000000000LL) {
+                    if (open_ring(ring, o.shm, 1)) { last = 0; obs_buf.resize(ring.ring.max_payload()); }
+                    t_last_frame = mono_ns();
+                }
+                usleep(5000);
+                continue;
+            }
+            f = &obs_hdr;
+            t0 = mono_ns();
+            if (!frame_ok(f)) { last = f->seq; continue; }
+            pixels = obs_buf.data();
         }
-        const pod_frame_hdr_t* f = ring.ring.acquire_latest(last);
-        if (!f) continue;
-        const int64_t t0 = mono_ns();
-        if (!frame_ok(f)) { ring.ring.release(); continue; }
 
         pod_detections_t r{};
         r.magic = POD_DETS_MAGIC;
         r.frame_seq = f->seq;
         r.t_capture_ns = f->t_capture_ns;
         const uint64_t skipped = (last && f->seq > last + 1) ? f->seq - last - 1 : 0;
-        pod::yuyv_to_rgb_resize(ring.ring.payload(f), f->width, f->height, f->stride, det.input, det.in_w, det.in_h);
+        pod::yuyv_to_rgb_resize(pixels, f->width, f->height, f->stride, det.input, det.in_w, det.in_h);
         last = f->seq;
-        ring.ring.release();                   /* frame copied: give the slot back before the slow part */
+        if (!o.observe) ring.ring.release();  /* frame copied: give the slot back before the slow part */
         const int64_t t1 = mono_ns();
 
         if (!det.invoke()) { std::fprintf(stderr, "pod-infer: Invoke failed\n"); return 1; }

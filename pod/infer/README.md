@@ -27,6 +27,25 @@ Start `pod-capture` first. `pod-infer` waits up to 5 s for the ring `/pod_frames
 | `--seconds` | 0 | Stop after N seconds (0 = run until Ctrl-C) |
 | `--stats` | 5 | Print a latency summary every N seconds (0 = only at exit) |
 | `--quiet` | off | Don't print a line for each frame with detections |
+| `--health-out` | off | Write the heartbeat health file here every 10 s (P3-3). Use `pod-data/uplink/heartbeat.json`. |
+| `--status` | `pod-data/supervisor/status.json` | Supervisor status file: source of `temp_c` and `restarts` |
+| `--observe` | off | Read frames as a read-only observer (`Ring::peek_latest`), so a second pod-infer can run next to the real one for tests. Use with `--dets-mq ""`. It competes for CPU, so keep such tests short. |
+
+## Heartbeat health file (P3-3)
+
+With `--health-out`, pod-infer writes the 7 health fields that `pod-uplink` sends as `/api/heartbeat` (see `heartbeat.h`). The file is rewritten atomically every 10 s:
+
+| Field | Source |
+|-------|--------|
+| `infer_p50_ms`, `infer_p99_ms` | model run time, frames from the last 60 s |
+| `e2e_p50_ms`, `e2e_p99_ms` | camera callback to detections ready, last 60 s |
+| `temp_c` | supervisor `status.json` if under 60 s old, else `/dev/thermal` |
+| `restarts` | supervisor `status.json` (0 without a supervisor) |
+| `disk_free_mb` | free space on the file's filesystem |
+
+The file is **deleted** on exit, when no frame arrived in 60 s, or when no temperature reading exists, so heartbeats stop rather than repeat old or invented numbers. A heartbeat therefore means "the Pod was observing", which is how agent-3's density code uses them (as camera time).
+
+Pi test, 2026-11-22: an observer instance (`--observe --threads 1`) wrote the file and the ground station accepted 3 heartbeats (`pod-data/uplink/heartbeat_seq` went from none to 3), e.g. `{"infer_p50_ms":181.86,"infer_p99_ms":205.65,"e2e_p50_ms":210.49,"e2e_p99_ms":251.23,"temp_c":52.7,"disk_free_mb":13486,"restarts":11}`. Those latencies are from the slower 1-thread test instance. The file was gone after exit.
 
 ## What it does per frame
 

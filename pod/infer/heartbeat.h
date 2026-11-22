@@ -136,7 +136,9 @@ public:
     /* Call every loop pass with CLOCK_MONOTONIC now and Unix-ms now. Writes or removes the
      * file every every_ns. Returns nullptr = not due yet, "" = written, else why it was removed. */
     const char* maybe_write(int64_t now_ns, int64_t now_wall_ms) {
-        if (!enabled() || now_ns - last_ns_ < every_ns_) return nullptr;
+        if (!enabled()) return nullptr;
+        if (last_ns_ == kNever) { last_ns_ = now_ns; return nullptr; }   /* first check one period after start */
+        if (now_ns - last_ns_ < every_ns_) return nullptr;
         last_ns_ = now_ns;
         win_.trim(now_ns);
         if (win_.size() == 0) { remove(); return "no frames in the last 60 s"; }
@@ -207,7 +209,8 @@ private:
     std::string file_, status_;
     std::string thermal_ = "/dev/thermal";
     int64_t every_ns_;
-    int64_t last_ns_ = -(1LL << 62);
+    static constexpr int64_t kNever = -(1LL << 62);
+    int64_t last_ns_ = kNever;
     LatencyWindow win_;
     std::string last_;
 };

@@ -111,13 +111,16 @@ static void test_health_writer() {
 
     pod::HealthWriter h(out, status, 10000000000LL);
     h.set_thermal_path(thermal);
-    /* no frames yet: nothing to report, no file */
-    CHECK(h.maybe_write(1000000000LL, now_wall) != nullptr && !file_exists(out));
+    /* first call only starts the clock; one period later with no frames: no file */
+    CHECK(h.maybe_write(0, now_wall) == nullptr);
+    CHECK(h.maybe_write(1000000000LL, now_wall) == nullptr);
+    const char* r0 = h.maybe_write(10000000000LL, now_wall);
+    CHECK(r0 && std::string(r0) == "no frames in the last 60 s" && !file_exists(out));
 
     for (int i = 0; i < 50; ++i) h.add(2000000000LL + i * 66000000LL, 67000000LL, 90000000LL);
     put(status, "{\"t_wall_ms\":1795300000000,\"temp_c\":48.5,\"restarts\":1,\"children\":[]}");
-    CHECK(h.maybe_write(5000000000LL, now_wall) == nullptr);        /* < 10 s since the last try */
-    const char* r = h.maybe_write(12000000000LL, now_wall + 1000);
+    CHECK(h.maybe_write(15000000000LL, now_wall) == nullptr);       /* < 10 s since the last try */
+    const char* r = h.maybe_write(21000000000LL, now_wall + 1000);
     CHECK(r && !*r && file_exists(out));
     const std::string j = slurp(out);
     CHECK(j == "{\"infer_p50_ms\":67.00,\"infer_p99_ms\":67.00,\"e2e_p50_ms\":90.00,\"e2e_p99_ms\":90.00,"
@@ -126,15 +129,15 @@ static void test_health_writer() {
 
     /* supervisor has no temperature and there is no thermal device: file removed */
     put(status, "{\"t_wall_ms\":1795300000000,\"temp_c\":null,\"restarts\":1,\"children\":[]}");
-    r = h.maybe_write(23000000000LL, now_wall + 2000);
+    r = h.maybe_write(31000000000LL, now_wall + 2000);
     CHECK(r && std::string(r) == "no temperature reading" && !file_exists(out));
     /* ... but a thermal device reading is used instead */
     put(thermal, "51.0\n");
-    r = h.maybe_write(34000000000LL, now_wall + 3000);
+    r = h.maybe_write(41000000000LL, now_wall + 3000);
     CHECK(r && !*r && slurp(out).find("\"temp_c\":51.0") != std::string::npos);
     /* stale status.json (supervisor gone): thermal temp, restarts 0 */
     put(status, "{\"t_wall_ms\":1795200000000,\"temp_c\":40.0,\"restarts\":7,\"children\":[]}");
-    r = h.maybe_write(45000000000LL, now_wall + 4000);
+    r = h.maybe_write(51000000000LL, now_wall + 4000);
     CHECK(r && !*r && slurp(out).find("\"restarts\":0") != std::string::npos &&
           slurp(out).find("\"temp_c\":51.0") != std::string::npos);
     /* frames stop for > 60 s: file removed */
