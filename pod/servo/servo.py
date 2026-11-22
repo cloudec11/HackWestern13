@@ -16,8 +16,9 @@ Low power (written for an MG996R, which can pull 0.5 A moving and ~2.5 A when it
   - it starts from the middle and stays away from the ends (20-160 degrees), where it strains most.
 Software can't make an MG996R safe on the Pi's 5V pin: give it its own 5V supply (see README).
 
-Drives the servo with QNX's rpi_gpio module (hardware PWM, 50 Hz, "MS" mode, which QNX
-recommends for servos). Runs at NORMAL priority under pod-supervisor: the camera, saving
+Drives the servo with hardware PWM (50 Hz, "MS" mode): QNX's rpi_gpio module sets the pin up,
+and servo_pwm (pod/servo/servo_pwm.c, run with sudo) writes the pulse width, because the
+module's own ChangeDutyCycle never reaches the hardware. Runs at NORMAL priority under pod-supervisor: the camera, saving
 data and the watchdog always come first; the motor can stutter, the Pod keeps watching.
 
     python3 pod/servo/servo.py --status pod-data/scan.json            # on the Pi
@@ -60,37 +61,71 @@ def read_status(path, max_age_s):
         return None
 
 
+PWM_CHANNEL = {12: 0, 13: 1, 18: 2, 19: 3}   # BCM GPIO -> RP1 PWM0 channel (Pi 5)
+
+
 class Servo:
+    """rpi_gpio sets up the pin, clock, channel and 50 Hz period, but QNX's module cannot store a
+    duty between 0 and 100 % (ChangeDutyCycle(7.5) leaves the duty register at 0, so the pin never
+    pulses). The pulse width is therefore written by servo_pwm (pod/servo/servo_pwm.c), which runs
+    as root through sudo and pokes the RP1 PWM duty register. Measured: 50 % duty = 1.6 V on pin 12."""
+
     def __init__(self, args):
         self.args = args
         self.pwm = None
+        self.helper = None
         self.driving = False
         if args.dry_run:
             return
+        if args.pin not in PWM_CHANNEL:
+            raise ValueError(f"GPIO{args.pin} has no hardware PWM (use 12, 13, 18 or 19)")
         import rpi_gpio as GPIO      # QNX's GPIO module (resource manager: rpi_gpio)
+        import subprocess
         self.GPIO = GPIO
         GPIO.setmode(GPIO.BCM)
         GPIO.setup(args.pin, GPIO.OUT)
-        self.pwm = GPIO.PWM(args.pin, 50, GPIO.PWM.MODE_MS)   # 50 Hz = 20 ms period
+        self.pwm = GPIO.PWM(args.pin, 50, GPIO.PWM.MODE_MS)   # 50 Hz = 20 ms period, pin -> PWM function
         self.pwm.start(0)                                     # no pulses until the first move
+        self.helper = subprocess.Popen(["sudo", "-n", args.pwm_helper, str(PWM_CHANNEL[args.pin])],
+                                       stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1)
+        self._send(0)                                         # proves the helper works before we start
+
+    def _send(self, us):
+        """Pulse width in microseconds (0 = no pulses) -> servo_pwm. Raises if it refuses."""
+        if not self.helper:
+            return
+        self.helper.stdin.write(f"{int(round(us))}\n")
+        self.helper.stdin.flush()
+        reply = self.helper.stdout.readline().strip()
+        if not reply.startswith("ok"):
+            raise RuntimeError(f"servo_pwm: {reply or 'exited (sudo or I/O privilege?)'}")
+
+    def pulse_us(self, angle):
+        """Angle (0..180) -> pulse width (--min-us .. --max-us)."""
+        return self.args.min_us + (self.args.max_us - self.args.min_us) * angle / 180.0
 
     def duty(self, angle):
-        """Angle (0..180) -> duty cycle % of the 20 ms period (pulse --min-us .. --max-us)."""
-        us = self.args.min_us + (self.args.max_us - self.args.min_us) * angle / 180.0
-        return us / 20000.0 * 100.0
+        """Angle -> duty cycle % of the 20 ms period (shown on the debug page)."""
+        return self.pulse_us(angle) / 20000.0 * 100.0
 
     def move(self, angle):
         self.driving = True
-        if self.pwm:
-            self.pwm.ChangeDutyCycle(self.duty(angle))
+        self._send(self.pulse_us(angle))
 
     def relax(self):
         """Stop sending pulses: the motor stops pushing and draws almost nothing (gears hold the camera)."""
-        if self.driving and self.pwm:
-            self.pwm.ChangeDutyCycle(0)
+        if self.driving:
+            self._send(0)
         self.driving = False
 
     def close(self, angle):
+        if self.helper:
+            try:
+                self._send(0)
+                self.helper.stdin.close()
+                self.helper.wait(timeout=2)
+            except Exception:
+                self.helper.kill()
         if self.pwm:
             self.pwm.stop()
             self.GPIO.cleanup()
@@ -100,6 +135,8 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--status", default="pod-data/scan.json", help="pod-infer --scan-status file")
     p.add_argument("--pin", type=int, default=18, help="BCM GPIO for the servo signal (18 = physical pin 12, hardware PWM)")
+    p.add_argument("--pwm-helper", default="./build/servo/servo_pwm",
+                   help="servo_pwm binary that writes the pulse width (QNX's rpi_gpio can't; see servo_pwm.c)")
     p.add_argument("--step", type=float, default=2.0, help="degrees per step (small steps = small current spikes)")
     p.add_argument("--settle", type=float, default=0.3, help="seconds of pulses per step (time to reach the new angle)")
     p.add_argument("--rest", type=float, default=0.4, help="seconds with NO pulses between steps (saves power)")

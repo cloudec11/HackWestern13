@@ -37,13 +37,37 @@ pod-infer must run with `--scan-status pod-data/scan.json` (it does in pod.conf)
 | `--after-capture` | 2 | seconds to stay on a captured animal before moving on |
 | `--ignore` | 4 | seconds to ignore the camera after moving on |
 | `--max-hold` | 10 | give up on an unconfirmed animal after this long |
-| `--pin` | 18 | BCM GPIO of the signal wire |
+| `--pin` | 18 | BCM GPIO of the signal wire (12, 13, 18 or 19: the Pi 5's hardware PWM pins) |
+| `--pwm-helper` | `./build/servo/servo_pwm` | the helper that writes the pulse width (see below) |
 
-Uses QNX's `rpi_gpio` Python module (hardware PWM, 50 Hz, MS mode). If it fails with a permission error, run it through `sudo -n` like pod-infer. The QNX docs list GPIO 12, 13, 18 and 19 as hardware PWM pins but don't say whether that's confirmed for the Pi 5: if the servo doesn't move on pin 12, try `--pin 13` with the signal wire on **physical pin 33**.
+## Why there's a C helper (servo_pwm)
+
+**QNX's `rpi_gpio` Python module can't drive a servo on its own.** It sets the pin, the PWM clock (50 MHz), the channel and the 50 Hz period correctly, but it never stores a duty between 0 and 100 %:
+- `ChangeDutyCycle(7.5)` returns without an error, but the channel's duty register stays at **0**, so the pin never pulses.
+- `ChangeDutyCycleAbs()` only accepts 0 or 1 (0 % or 100 %).
+
+So `servo.py` uses the module for setup, and sends each pulse width (µs) to **`servo_pwm`** (`servo_pwm.c`). That helper runs as root through `sudo -n` and writes the RP1 PWM0 duty register directly. The pulse is timed by the hardware: precise, with no CPU cost.
+
+Build it on the Pi with `cmake -S pod/servo -B build/servo && cmake --build build/servo`, or deploy with `POD_COMPONENTS="... servo" sh pod/scripts/deploy.sh`. Without the helper, `servo.py` stops with a red `error` on the debug page.
+
+**How it was found (2026-11-22, agent-2), with a multimeter (black probe on pin 6, red on the signal pin, DC):**
+
+| Test | Reading |
+|---|---|
+| GPIO18 held high as a plain output | 3.3 V (pin and wiring fine) |
+| rpi_gpio PWM 50 % on GPIO18, MS mode and PWM mode | 0 V |
+| rpi_gpio PWM 50 % on GPIO13 (physical pin 33) | 0 V |
+| rpi_gpio setup + 500000 written straight into the duty register | **1.6 V** |
+
+Reading the registers (RP1 PWM0 at `0x1f00098000`, clocks at `0x1f00018000`) showed `CLK_PWM0` enabled, channel range 1,000,000, and duty 0 after every rpi_gpio call. `gpio-rp1 get 18` can't see PWM: its `level` stays 0 even at 50 % duty, so use a meter or the duty register.
+
+Also needed: the Pod's processes must be in group **522 (gpio)** to open `/dev/gpio`. `pod/scripts/pod_boot.sh` adds it.
 
 ## Tested
 
-On the laptop only (`--dry-run` against a scripted status file): stops on a new animal, moves on 2 s after it's captured, doesn't stop again on the same captured animal, gives up on an unconfirmed one once. pod-infer's `--scan-status` compiles against the TFLite 2.16 headers. **Not yet run with the real servo on the Pi.**
+- **On the Pi with the real MG996R (2026-11-22):** the camera pans. The duty register follows the angle, e.g. 1,900 µs at 126°, 2,033 µs at 138° and 2,122 µs at 146°, which is 500 + 2000 × angle / 180. It reads 0 between steps (the designed rest).
+- **Laptop** (`--dry-run` against a scripted status file): stops on a new animal, moves on 2 s after it's captured, doesn't stop again on the same captured animal, gives up on an unconfirmed one once.
+- **Not yet tested:** stopping on a real animal end to end, and long runs. The Pi rebooted once around 09:01 UTC during testing, cause not confirmed: check the servo has its own supply.
 
 ## Debugging: what is the servo doing?
 
