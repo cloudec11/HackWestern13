@@ -70,3 +70,34 @@ Every frame's `pod_detections_t` (including frames with no detections) is sent t
 Rate: **14.7 frames/s** (Gate 1 needs 5+). e2e is larger than pre + infer because a new frame waits while the model is still busy with the previous one.
 
 Still-image check (`--ppm`): COCO "two cats" photo gives 2 cats (0.72, 0.65), TF sample dog photo gives 1 dog (0.82), and the Grace Hopper (person) photo gives 0 detections.
+
+## Stress bench: CPU hog vs. priority (P3-2, agent-2's half)
+
+```
+sh pod/infer/stress_bench.sh 30 ~/agent2/bench-1          # on the Pi, ~2 min
+python3 pod/infer/latency_report.py a=a.csv b=b.csv --md t.md --json t.json   # any CSVs from --latency-log
+```
+
+`stress_bench.sh` pauses any running pod-infer (SIGSTOP, found with `sudo pidin`, since a normal user's `pidin` doesn't list root processes) and resumes it at the end, also on Ctrl-C or error. It then runs pod-infer three times as the ring's only consumer:
+- `baseline`: no load;
+- `hog`: 4 busy-loop shells at normal priority, pod-infer at normal priority;
+- `hog_fifo`: the same hog, pod-infer at SCHED_FIFO 15.
+
+While pod-infer is paused, the bench writes the heartbeat file itself, so heartbeats stay honest; the dashboard will show the hog run's numbers for those 30 s. `pod-infer --latency-log FILE.csv` writes one row per frame (`frame_seq,t_capture_ns,pre_us,infer_us,e2e_us,skipped,n_detections`).
+
+### Result (Pi 5, QNX 8.0, 2026-11-22 04:37 UTC, EfficientDet-Lite0, 3 threads, 30 s per run)
+
+| Run | Frames/s | infer p50 | infer p99 | e2e p50 | e2e p99 | e2e max | e2e > 200 ms |
+|---|---|---|---|---|---|---|---|
+| baseline | 14.1 | 69.1 | 74.4 | 90.4 | 128.8 | 138.6 | 0.0% |
+| hog, normal priority | 0.4 | 2416.0 | 2563.8 | 2433.4 | 2605.4 | 2605.4 | 100.0% |
+| hog, SCHED_FIFO 15 | 11.2 | 87.8 | 100.0 | 110.3 | 149.8 | 159.3 | 0.0% |
+
+All times are in ms. Raw output: `bench/2026-11-22/` (`report.txt` with histograms, `table.md`, `latency.json` for the dashboard).
+
+What it shows:
+- **Without priority, a CPU hog wrecks inference: it gets 35x slower.** That's much worse than a fair share of the CPU would suggest. The 3 inference threads have to meet at the end of every layer, so the job waits for whichever thread the scheduler has parked behind a hog.
+- **With SCHED_FIFO 15, inference keeps a bounded, measured latency under the same load:** e2e p99 150 ms against 129 ms idle, and no frame over 200 ms.
+- **It isn't free:** infer p50 is 88 ms against 69 ms idle, and the rate drops from 14.1 to 11.2 frames/s. The hogs still use the 4th core, and they share memory bandwidth and cache with the inference threads.
+
+The supervised pod-infer currently runs at priority 0 (`pod.conf`). Before this bench, the supervisor log showed it at infer p99 410 ms at 8.1 frames/s with no hog, just from sharing the CPU with pod-view and the rest. It should run with `--prio 15` (see the handoff in TASKS.md).

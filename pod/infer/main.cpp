@@ -85,6 +85,7 @@ struct Options {
     int stats = 5;
     bool quiet = false;
     bool observe = false;
+    std::string latency_log;
 };
 
 bool parse(int argc, char** argv, Options& o) {
@@ -106,11 +107,13 @@ bool parse(int argc, char** argv, Options& o) {
         else if (a == "--stats" && (v = next())) o.stats = std::atoi(v);
         else if (a == "--quiet") o.quiet = true;
         else if (a == "--observe") o.observe = true;
+        else if (a == "--latency-log" && (v = next())) o.latency_log = v;
         else {
             std::fprintf(stderr,
                 "usage: pod-infer [--model F] [--labels F] [--shm NAME] [--dets-mq NAME] [--threads N] [--prio N]\n"
                 "                 [--min-score S] [--seconds N] [--stats N] [--quiet] [--ppm IMAGE]\n"
-                "                 [--health-out FILE] [--status SUPERVISOR_STATUS_JSON] [--observe]\n");
+                "                 [--health-out FILE] [--status SUPERVISOR_STATUS_JSON] [--observe]\n"
+                "                 [--latency-log FILE.csv]\n");
             return false;
         }
     }
@@ -334,6 +337,15 @@ int main(int argc, char** argv) {
     pod::DetsSender tx(o.dets_mq.c_str());
     const bool send_dets = !o.dets_mq.empty();
     pod::HealthWriter health(o.health_out, o.status);
+
+    /* --latency-log (P3-2): one CSV row per processed frame, for histograms (latency_report.py). */
+    FILE* lat_log = nullptr;
+    if (!o.latency_log.empty()) {
+        lat_log = std::fopen(o.latency_log.c_str(), "w");
+        if (!lat_log) { std::perror("pod-infer: --latency-log"); return 1; }
+        std::fprintf(lat_log, "frame_seq,t_capture_ns,pre_us,infer_us,e2e_us,skipped,n_detections\n");
+    }
+    int64_t t_lat_flush = 0;
     pod::ShmRing ring;
     if (!open_ring(ring, o.shm, 50)) { std::fprintf(stderr, "pod-infer: cannot open ring %s (is pod-capture running?)\n", o.shm.c_str()); return 1; }
     std::printf("pod-infer: reading %s, sending to %s, min score %.2f, prio %d%s\n", o.shm.c_str(),
@@ -422,6 +434,14 @@ int main(int argc, char** argv) {
             w->dets += r.n_detections;
             w->unsent += unsent ? 1 : 0;
         }
+        if (lat_log) {
+            std::fprintf(lat_log, "%llu,%lld,%lld,%lld,%lld,%llu,%u\n", static_cast<unsigned long long>(r.frame_seq),
+                         static_cast<long long>(r.t_capture_ns), static_cast<long long>((t1 - t0) / 1000),
+                         static_cast<long long>((r.t_infer_done_ns - t1) / 1000),
+                         static_cast<long long>((r.t_infer_done_ns - r.t_capture_ns) / 1000),
+                         static_cast<unsigned long long>(skipped), r.n_detections);
+            if (r.t_infer_done_ns - t_lat_flush > 1000000000LL) { std::fflush(lat_log); t_lat_flush = r.t_infer_done_ns; }
+        }
         if (!o.quiet && r.n_detections > 0) print_dets(r, labels);
 
         if (o.stats > 0 && r.t_infer_done_ns - t_win >= static_cast<int64_t>(o.stats) * 1000000000LL) {
@@ -432,5 +452,6 @@ int main(int argc, char** argv) {
     }
     print_stats("total", total, static_cast<double>(mono_ns() - t_start) / 1e9);
     health.remove();   /* no stale health numbers after we stop */
+    if (lat_log) std::fclose(lat_log);
     return 0;
 }
