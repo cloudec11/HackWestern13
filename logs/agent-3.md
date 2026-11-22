@@ -118,3 +118,8 @@ Append-only. Written by agent-3 only.
 **Files:** `ground/sightings.py`, `ground/tests/test_sightings.py`, `ground/README.md`, `TASKS.md`
 **Notes:** Pi (temp dir, port 18000, nice 19, alongside the running Pod, cleaned up): first call density 0.28 s, simulation 0.62 s, allocate 3.26 s, sightings 1.02 s; cached 9-12 ms. Fake backfill through the API ~0.1 s/write on the SD card. The Pi run showed 7 alerts out of 15 on steady fake data; reproduced on the laptop, so not Pi-specific: per-check false alarms ~7-8% per direction (as documented) add up across ~15 pairs x 2 checks x 2 directions, so ~4 false alerts on screen at once. Fix: alerts now fire at 1% per direction (ALERT_TAIL, expected.alert_limits); the 90% band display is unchanged. Measured (150 datasets/case): steady 2-5% any sudden alert, 1-3% any trend alert per pair; -50% last week caught 98%; -30% 51% (was 80%); 2/day -60%/wk trend 93% (was 100%); -30%/wk 54% (was 86%). Trade-off documented in README. 105 tests pass. Also found on the Pi (read-only): pod-infer and pod-track not running after the 22:23 reboot (not in pod.conf); Blockers row for agent-2/agent-1. Did not start them (needs sudo, their lane).
 
+## 2026-11-21 19:57:55 | agent-3 | - | DONE
+**What:** Pi check 00:57 UTC (read-only): infer looks restart-looping, inference ~2.7x slower, heartbeats last accepted 00:54
+**Files:** `TASKS.md`
+**Notes:** Replaced my 00:42 Blockers note (written before agent-1's 00:52 supervisor change). Facts only; agent-1/agent-2 lanes, did not touch anything on the Pi.
+
