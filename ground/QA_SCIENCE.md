@@ -10,7 +10,7 @@ QNX and real-time questions belong to agent-1's half of P5-3. Facts gathered fro
 
 ## 1. "Where's the AI?"
 
-**Say:** On the Pod. An EfficientDet-Lite0 detector runs in TensorFlow Lite from QNX's open-source qnx-ports, on the Pi's CPU, on every camera frame. It turns video into one record per animal visit, so no video ever leaves the device.
+**Say:** On the Pod. An EfficientDet-Lite0 detector runs in TensorFlow Lite from QNX's open-source qnx-ports, on the Pi's CPU, on every camera frame. It turns video into one record per animal visit, about 160 bytes each, and in the field build those records are all that leave the device.
 
 **If pushed:** The population maths afterwards is deliberately *not* machine learning. It's published ecology, so it can be explained and checked. That's a strength, not a gap.
 
@@ -79,7 +79,15 @@ This is the strongest answer we have, because we tested the forecast against rea
 
 **If pushed:** agent-2's still-image check, a photo of a person, produced 0 detections. The contract and the server both refuse `person`.
 
-**Evidence:** `models/labels.csv`, `shared/event_schema.json`, `ground/tests/test_api.py`.
+**Be upfront about the live camera view:** the demo's live video (pod-view) *does* show whoever is in front of the camera. Don't wait for a judge to notice it on screen. Say: *"The live camera view is a setup and demo tool on the local network. It saves nothing, and in the field it's switched off, so only the sighting records leave the Pod."*
+
+**Evidence:** `models/labels.csv`, `shared/event_schema.json`, `ground/tests/test_api.py`, `pod/supervisor/pod.conf` (the `view` line turns the live view on).
+
+## 9b. "Doesn't the live video contradict 'no video leaves the device'?"
+
+**Say:** For the demo, yes. That's why we don't claim "no video" without qualification. The data pipeline never sends video: the ground station only receives 160-byte sighting records. The live view is a separate, optional process (pod-view) that serves a local stream for setting up the camera and for showing judges what the AI sees. It saves nothing and runs at normal priority, below the camera. Once pod-infer runs at its real-time priority, the live view can't slow detection. (Until then it can: see the stress-test note below.) In the field, you remove one line from `pod.conf` and it's gone.
+
+**Don't say:** "No video ever leaves the Pod" (it does, during the demo).
 
 ## 10. "The plush toys: is that cheating?"
 
@@ -108,6 +116,7 @@ This is the strongest answer we have, because we tested the forecast against rea
 
 ## Don't say
 
+- "No video leaves the Pod" without qualification. Say **"only sighting records leave the Pod in the field; the live view is a local demo tool"** (see 9b).
 - "Zero delay" or "real-time AI ecology". Say **"bounded, measured latency"** and **"illustrative parameters"**.
 - "Our forecast predicts…". Say **"our forecast shows the range of likely outcomes"**.
 - "Parameters from the literature".
@@ -129,10 +138,16 @@ This is the strongest answer we have, because we tested the forecast against rea
 | Crash-safe log | `kill -9` plus a half-written line → recovered, seq continued | agent-1, P2-2 |
 | Network outage | server down, 25 events queued → 45 acked in ~2 s, 0 lost, 0 duplicates | agent-1, P2-3 |
 | Starts on power-up | verified with a real reboot | agent-1 |
+| **CPU stress test, no load** | 14.1 frames/s; camera→detection p50 90 ms, **p99 129 ms**, max 139 ms | agent-2, P3-2 (`pod/infer/README.md`, Stress bench) |
+| **4 CPU hogs, AI at normal priority** | **0.4 frames/s**; p99 **2,605 ms**; 100% of frames over 200 ms (35× slower) | same |
+| **4 CPU hogs, AI at SCHED_FIFO 15** | **11.2 frames/s**; p50 110 ms, **p99 150 ms**, max 159 ms; **0% over 200 ms** | same |
+| Ground station on the Pi | first call 0.3–3.3 s (density 0.28, forecast 0.62, budget 3.26, sightings 1.02); cached ~10 ms | agent-3 |
 
-**Not measured yet (don't claim):**
-- The CPU-hog stress test (P3-2). Our "latency barely moves under load" claim has no numbers yet, and it's central to the QNX pitch.
-- The ground station's endpoints timed on the Pi.
+**The stress test is the QNX headline:** *"With every core loaded, detection stays bounded: 150 ms at the 99th percentile and no frame over 200 ms, because QNX's scheduler keeps the AI ahead of everything else. Without that priority, the same load makes it 35 times slower."*
+
+**⚠️ Don't claim it for the Pod as deployed until `pod.conf` changes.** The supervised pod-infer still runs at default priority, the row that collapses. agent-2 also measured it at **p99 410 ms and 8.1 frames/s with no hog at all**, just from sharing the CPU with the live view and the rest. pod-infer needs to start at SCHED_FIFO 15 (agent-1's half of P3-2), and then the deployed config should be re-measured.
+
+**Never claim:** "hard real-time" or a formally guaranteed deadline (these are measured bounds), or "better than Linux" (we haven't run Linux on this Pi; QNX and Hailo published that comparison, so cite it as theirs).
 
 **Known gotchas:**
 - The Pi has no battery-backed clock. It boots in 1970 until NTP syncs, and events from before the sync are rejected.

@@ -31,7 +31,8 @@ USB webcam                                              ground API :8000 (Python
 pod-supervisor (FIFO 40) starts, watches and restarts everything
 ```
 
-- **No video leaves the Pod**, and people are never stored: the label table has no person class, and the server rejects one.
+- **Only small sighting records go to the ground station**, never video. People are never stored: the label table has no person class, and the server rejects one.
+- **The live camera view (pod-view) is a local setup and demo tool.** It streams video, people included, to browsers on the same network, but saves nothing. Remove its line from `pod/supervisor/pod.conf` for field deployment.
 - A visit is about **160 bytes** of JSON.
 - **Heartbeats** go out about every 10 s with detection speed, temperature and restarts. They also prove the camera was running, which the population maths needs.
 
@@ -143,7 +144,16 @@ This shows the habitat view, the charts panel and the live camera panel. The Sim
 
 - **Working on the Pi:** camera capture at about 15–20 fps; on-device detection (agent-2 measured inference at **67–68 ms median, 69–73 ms p99** on an idle Pi); tracking, logging and store-and-forward uplink (a server outage lost 0 of 45 events in agent-1's test); supervisor restarts; start at power-on; heartbeats reaching the ground station.
 - **Ground station:** all science endpoints are built and tested (105 tests), and on the Pi they answer in 0.3–3.3 s the first time and about 10 ms after that.
-- **In progress:** the CPU-load stress test (P3-2), which backs the "latency holds under load" claim; dashboard panels for the forecast and budget (P3-5); demo set, slides and backup video.
+- **CPU stress test (P3-2, agent-2's bench on the Pi, 4 CPU-hog loops):**
+
+  | AI priority | Frames/s | Camera→detection p99 | Frames over 200 ms |
+  |---|---|---|---|
+  | No load | 14.1 | 129 ms | 0% |
+  | Load, normal priority | 0.4 | 2,605 ms | 100% |
+  | **Load, SCHED_FIFO 15** | **11.2** | **150 ms** | **0%** |
+
+  With real-time priority, QNX keeps detection latency bounded under full load. **The deployed `pod.conf` still starts pod-infer at default priority**, which collapses under load and measured p99 410 ms even without a hog. It needs `SCHED_FIFO 15` before this claim holds for the running Pod. Details are in [pod/infer/README.md](pod/infer/README.md).
+- **In progress:** pod-infer at real-time priority in the deployed config, plus a stress-test demo script (agent-1); dashboard panels for the forecast, budget and alerts (P3-5); demo set, slides and backup video.
 - The live task board is [TASKS.md](TASKS.md), and every change is in [LOG.md](LOG.md) and `logs/`.
 
 ## Honest limits

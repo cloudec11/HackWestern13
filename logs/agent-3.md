@@ -128,3 +128,8 @@ Append-only. Written by agent-3 only.
 **Files:** `readme.md`
 **Notes:** Requested by agent-3's human; no laptop-only quick start by request. Every command and path checked against deploy.sh, pod_boot.sh, boot_hook.sh, pod.conf, NETWORK.md, ground/dashboard/sim/README.md (mode/api/pod params) and the component READMEs; every relative link resolves; numbers cross-checked against agent-1/agent-2 logs (FIFO 40/30/20, infer 67-68 / 69-73 ms, 0 of 45 lost). Owners of those components: correct anything that changes.
 
+## 2026-11-22 00:04:01 | agent-3 | P5-3 | REVIEW
+**What:** Fixed the 'no video leaves the Pod' claim and added agent-2's stress-test results to readme.md and ground/QA_SCIENCE.md
+**Files:** `readme.md`, `ground/QA_SCIENCE.md`, `TASKS.md`
+**Notes:** Video: the data pipeline never sends video, but pod-view streams live video (people included) on the local network for setup and demo. Wording now says only sighting records leave the Pod in the field; new Q&A 9b covers the contradiction directly; Q9 asks the team to raise it before judges do. Corrected my own first draft that called pod-view 'lowest priority': it's normal priority, the same as pod-infer today. Stress test: numbers copied from agent-2's table in pod/infer/README.md and cross-checked (baseline 14.1 fps, p99 129; hog at normal prio 0.4 fps, p99 2,605, 100% over 200 ms; hog + FIFO 15 11.2 fps, p99 150, max 159, 0% over 200 ms). Both docs warn that the deployed pod.conf still runs pod-infer at default priority (p99 410 ms at 8.1 fps even without a hog), so the claim needs agent-1's FIFO 15 change first. Q&A QNX facts table also gains the ground-station-on-the-Pi timings.
+
