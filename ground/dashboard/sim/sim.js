@@ -15,6 +15,10 @@
   var API = (params.get('api') || '').replace(/\/$/, '');
   var SCENE_URL = params.get('scene') || (API ? API + '/api/scene' : './fake_scene.json');
   var REFRESH_MS = params.has('refresh') ? Math.max(1, Number(params.get('refresh'))) * 1000 : 30000;
+  // Live mode (live.js): count only animals seen since this time (ms), so counts start at 0 on entering
+  // Live, and take the weather from the Pod (pod-view /weather.json) instead of the scene's placeholder.
+  var SINCE = Number(params.get('since')) || 0;
+  var WEATHER_URL = params.get('weather_url') || '';
   var EYE = 1.6;                 // viewer eye height, metres
   var FOG_LEVELS = 8;            // pre-tinted copies per picture
 
@@ -733,11 +737,44 @@
     return fetch(SCENE_URL, { cache: 'no-store' })
       .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(function (json) { showError(''); dataNote = ''; return json; })
+      .then(liveExtras)
       .catch(function (e) {
         if (location.protocol === 'file:') dataNote = ' (built-in copy)';
         else showError('Could not load ' + SCENE_URL + ' (' + e.message + '). Showing built-in fake scene.');
         return BUILTIN_SCENE;
       });
+  }
+
+  function getJson(url) {
+    return fetch(url, { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
+  }
+
+  // Live mode only: recount animals since SINCE, and merge the Pod's real weather.
+  function liveExtras(json) {
+    var jobs = [];
+    if (API && SINCE) {
+      jobs.push(getJson(API + '/api/events?limit=10000&since_ms=' + SINCE +
+                        (json.pod_id && json.pod_id !== 'no-pod-yet' ? '&pod_id=' + encodeURIComponent(json.pod_id) : ''))
+        .then(function (rows) {
+          var n = {};
+          rows.forEach(function (e) { if (e.species && e.species !== 'unknown') n[e.species] = (n[e.species] || 0) + 1; });
+          json.animals = Object.keys(n).sort(function (a, b) { return n[b] - n[a] || (a < b ? -1 : 1); })
+            .map(function (sp) { return { species: sp, count: n[sp] }; });
+        })
+        .catch(function () {}));
+    }
+    if (WEATHER_URL) {
+      jobs.push(getJson(WEATHER_URL).then(function (w) {
+        if (!w || !w.condition) return;
+        var stale = w.t_ms && Date.now() - w.t_ms > 3 * 3600e3;
+        json.weather = {
+          condition: w.condition, temp_c: w.temp_c, wind_kmh: w.wind_kmh,
+          source: (w.source || 'Pod') + (w.place ? ' · ' + w.place : '') +
+                  (w.location_source ? ' (' + w.location_source + ')' : '') + (stale ? ' · STALE' : '')
+        };
+      }).catch(function () {}));
+    }
+    return Promise.all(jobs).then(function () { return json; });
   }
 
   function effective() {
@@ -766,7 +803,8 @@
     setText('hud-title', (data.pod_id || 'pod') + ' · ' + BIOMES[biomeKey].label);
     setText('hud-weather', p.label + (w.temp_c != null ? ' · ' + w.temp_c + '°C' : '') +
       (w.wind_kmh != null ? ' · wind ' + w.wind_kmh + ' km/h' : '') + ' · ' + hhmm);
-    setText('hud-animals', (data.animals || []).map(function (a) { return a.species + ' ×' + a.count; }).join(' · ') || 'No animals seen yet');
+    setText('hud-animals', ((data.animals || []).map(function (a) { return a.species + ' ×' + a.count; }).join(' · ') ||
+      'No animals seen yet') + (SINCE && API ? '  (since ' + new Date(SINCE).toTimeString().slice(0, 5) + ')' : ''));
     var ov = overrides.biome || overrides.condition || overrides.hour !== null ? ' · dev override on' : '';
     setText('hud-src', 'biome: ' + (data.biome_source || '?') + ' · weather: ' + (w.source || '?') + dataNote + ov);
   }

@@ -3,7 +3,7 @@
  * A setup/demo tool, NOT part of the core pipeline: off by default, saves nothing.
  *
  *   pod-view [--port 8080] [--fps 8] [--quality 70] [--shm /pod_frames]
- *            [--labels models/labels.csv] [--dets-in ""] [--dets-out ""]
+ *            [--labels models/labels.csv] [--dets-in ""] [--dets-out ""] [--weather pod-data/weather.json]
  *   then open http://qnxpi.local:8080 (or http://<pi-ip>:8080) on the laptop.
  *
  * Frames: copies the newest frame from pod-capture's ring with Ring::peek_latest(): a
@@ -16,7 +16,8 @@
  * pod-view receives each pod_detections_t, draws it, and forwards it unchanged to
  * --dets-out so pod-track still gets every frame. Without --dets-in: video only.
  *
- * HTTP:  /  page,  /stream  MJPEG,  /snapshot.jpg  one frame,  /status.json  detections + stats.
+ * HTTP:  /  page,  /stream  MJPEG,  /snapshot.jpg  one frame,  /status.json  detections + stats,
+ *        /weather.json  the Pod's location + weather (file from pod/uplink/weather.py).
  * Privacy: frames only ever live in memory and on the wire to the browser. Nothing is written.
  */
 #include <arpa/inet.h>
@@ -50,6 +51,7 @@
 namespace {
 
 std::atomic<bool> g_stop{false};
+std::string g_weather_path = "pod-data/weather.json";   // written by pod/uplink/weather.py
 void on_signal(int) { g_stop = true; }
 
 int64_t mono_ns() {
@@ -321,6 +323,11 @@ void serve_client(int fd, State& st, const std::map<int, std::string>& labels, b
         send_text(fd, "text/html; charset=utf-8", kPage);
     } else if (p == "/status.json") {
         send_text(fd, "application/json", status_json(st, labels, tap));
+    } else if (p == "/weather.json") {
+        std::ifstream f(g_weather_path);
+        std::stringstream ss;
+        if (f) ss << f.rdbuf();
+        send_text(fd, "application/json", f ? ss.str() : std::string("{\"error\":\"no weather yet\"}"));
     } else if (p == "/snapshot.jpg") {
         std::vector<unsigned char> j;
         { std::lock_guard<std::mutex> lk(st.mu); j = st.jpeg; }
@@ -371,6 +378,7 @@ int main(int argc, char** argv) {
         else if (a == "--labels") o.labels = v;
         else if (a == "--dets-in") o.dets_in = v;
         else if (a == "--dets-out") o.dets_out = v;
+        else if (a == "--weather") g_weather_path = v;
         else { std::fprintf(stderr, "pod-view: unknown option %s\n", a.c_str()); return 2; }
     }
     signal(SIGPIPE, SIG_IGN);

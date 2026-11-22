@@ -18,7 +18,7 @@
   var API = (params.get('api') || '').replace(/\/$/, '');
   var SCENE = params.get('scene') || '';
   var HISTORY_URL = params.get('history') ||
-    (API ? API + '/api/events?limit=10000&since_ms=' + (Date.now() - 90 * 864e5) :
+    (API ? API + '/api/events?limit=10000&since_ms=' + (Number(params.get('since')) || (Date.now() - 90 * 864e5)) :
      /live_scene/.test(SCENE) ? 'live_history.json' : '');
   var REFRESH_MS = Math.max(5, Number(params.get('refresh')) || 30) * 1000;
 

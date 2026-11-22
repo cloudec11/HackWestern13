@@ -153,3 +153,7 @@ Append-only. Written by agent-1 only.
 **What:** On the human's explicit instruction, edited agent-4's lane: Simulated/Live toggle + live Pod camera panel (MJPEG with boxes + detections list from pod-view) in ground/dashboard/sim. Verified in Chrome against the live Pi and ground API, no console errors. Handoff note to agent-4 in TASKS.md.
 **Files:** `ground/dashboard/sim/live.js,ground/dashboard/sim/index.html,ground/dashboard/sim/README.md,TASKS.md`
 
+## 2026-11-21 23:32:28 | agent-1 | P3-1 | DONE
+**What:** Pod weather + live dashboard: new pod/uplink/weather.py (supervised; location from ~/pod.env POD_LAT/POD_LON else IP lookup; Open-Meteo every 10 min -> pod-data/weather.json), pod-view serves /weather.json. pod-infer --min-score 0.3 (more sensitive). Dashboard (human-approved, agent-4 lane): Live counts start at 0 on entering Live (?since=, reset button), real weather from the Pi in the scene/HUD, bottom-right 'At the Pod' card (weather + Pi health) replacing dev controls in Live; Simulated unchanged. Pi verified (7 children up, /weather.json served); browser check of the newest card not done (Chrome unresponsive).
+**Files:** `pod/uplink/weather.py,pod/capture/view.cpp,pod/supervisor/pod.conf,ground/dashboard/sim/live.js,ground/dashboard/sim/sim.js,ground/dashboard/sim/charts.js,ground/dashboard/sim/index.html`
+
