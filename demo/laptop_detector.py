@@ -58,6 +58,7 @@ CLIP_URL = "https://huggingface.co/Xenova/clip-vit-base-patch32/resolve/main/"
 CLIP_FILES = {"vision_model.onnx": "onnx/vision_model.onnx", "text_model.onnx": "onnx/text_model.onnx",
               "tokenizer.json": "tokenizer.json"}
 SIM_DIR = REPO / "ground" / "dashboard" / "sim"
+CLIP_TFLITE = REPO / "models" / "clip_vision.tflite"
 IMAGE_EXT = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
 # COCO indices (as output by both detectors) for things that may contain a picture of an animal.
@@ -190,7 +191,16 @@ class Clip:
         ensure_clip()
         opts = ort.SessionOptions()
         opts.log_severity_level = 3
-        self.vision = ort.InferenceSession(str(CLIP_DIR / "vision_model.onnx"), opts, providers=["CPUExecutionProvider"])
+        # Prefer the TFLite build the Pod runs (models/clip_vision.tflite), so laptop and Pi use the same model.
+        self.tflite = None
+        if CLIP_TFLITE.exists():
+            self.tflite = Interpreter(model_path=str(CLIP_TFLITE), num_threads=os.cpu_count() or 4)
+            self.tflite.allocate_tensors()
+            self.tfl_in = self.tflite.get_input_details()[0]["index"]
+            self.tfl_out = self.tflite.get_output_details()[0]["index"]
+            print(f"CLIP image model: {CLIP_TFLITE.name} (TFLite, same as the Pod)")
+        else:
+            self.vision = ort.InferenceSession(str(CLIP_DIR / "vision_model.onnx"), opts, providers=["CPUExecutionProvider"])
         self.species = species
         self.labels = species + [None] * len(NOTHING)          # None = "not an animal"
         self.text = self._text_embeddings(species, opts)
@@ -226,8 +236,13 @@ class Clip:
         sq = cv2.copyMakeBorder(crop_bgr, (s - h) // 2, s - h - (s - h) // 2, (s - w) // 2, s - w - (s - w) // 2,
                                 cv2.BORDER_REPLICATE)
         im = cv2.resize(sq, (224, 224), interpolation=cv2.INTER_CUBIC)[:, :, ::-1].astype(np.float32) / 255
-        x = ((im - self.MEAN) / self.STD).transpose(2, 0, 1)[None]
-        e = self.vision.run(None, {"pixel_values": x})[0][0]
+        x = ((im - self.MEAN) / self.STD)
+        if self.tflite is not None:
+            self.tflite.set_tensor(self.tfl_in, x[None].astype(np.float32))
+            self.tflite.invoke()
+            e = self.tflite.get_tensor(self.tfl_out)[0]
+        else:
+            e = self.vision.run(None, {"pixel_values": x.transpose(2, 0, 1)[None]})[0][0]
         logits = 100 * self.text @ (e / np.linalg.norm(e))
         p = np.exp(logits - logits.max())
         return p / p.sum()

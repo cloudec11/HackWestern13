@@ -101,3 +101,31 @@ What it shows:
 - **It isn't free:** infer p50 is 88 ms against 69 ms idle, and the rate drops from 14.1 to 11.2 frames/s. The hogs still use the 4th core, and they share memory bandwidth and cache with the inference threads.
 
 The supervised pod-infer currently runs at priority 0 (`pod.conf`). Before this bench, the supervisor log showed it at infer p99 410 ms at 8.1 frames/s with no hog, just from sharing the CPU with pod-view and the rest. It should run with `--prio 15` (see the handoff in TASKS.md).
+
+## CLIP animal identification (prototype 1, branch `prototype-1`)
+
+**Problem:** with the C270 webcam, the COCO detector finds a phone-screen or plushie animal in only a few frames, and it cannot name most animals (no deer, fox, raccoon...). Lowering `--min-score` gave false "cat" boxes on empty frames.
+
+**Fix (from the laptop scanner, `demo/laptop_detector.py`):** `--clip-model models/clip_vision.tflite` turns on a second model, CLIP ViT-B/32, run by the same QNX TFLite build:
+
+1. The detector only says **where** to look: an animal it knows, or a phone/TV/laptop/book/teddy bear that may show one (score ≥ `--clip-region`, default 0.3). If there is none, it looks at the middle of the view. Person is never chosen.
+2. A worker thread (normal priority, below the detector) cuts that region from the **full 640×480 frame**, runs CLIP and compares the result with 53 animal names (`models/clip/labels.txt`, text side precomputed on the laptop in `models/clip/text.f32`).
+3. An animal counts only after it wins `--clip-need` of the last `--clip-window` checks (pod.conf: 4 of 6). While it stays in view, every message to pod-track carries it, so pod-track makes **one visit** and it reaches the dashboard as that species (shown as a plushie in the habitat view).
+
+The detector loop keeps its rate and priority; CLIP only takes frames when it's free. `--stats` adds a `clip` line with checks per second and CLIP run time. Without `--quiet`, every check is printed (`CLIP check: deer 0.83 (votes 3/4 for deer)`).
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--clip-model` | off | `models/clip_vision.tflite` turns CLIP on |
+| `--clip-labels`, `--clip-text` | `models/clip/labels.txt`, `models/clip/text.f32` | animal list and its text embeddings |
+| `--clip-min-prob` | 0.45 | a check counts as a vote at this probability |
+| `--clip-region` | 0.3 | detector score to look closer at a region |
+| `--clip-need`, `--clip-window` | 6, 10 | votes needed out of recent checks |
+| `--clip-threads` | 1 | CLIP inference threads |
+| `--clip-prio` | 10 | worker priority (QNX normal), below the detector |
+
+**Files:** `models/clip_vision.tflite` (88.5 MB, int8 weights, builtin ops only: FULLY_CONNECTED, BATCH_MATMUL, SOFTMAX, CONV_2D, ...) is built by `models/clip/make_clip_tflite.py` with TensorFlow 2.16 (same version as the QNX port). `models/clip/export_text.py` writes the label/text files from `demo/species.txt`. `deploy.sh` copies all three. Every CLIP animal has a row in `models/labels.csv` (ids 12+, no model_index).
+
+**Checked on the laptop (not yet on the Pi):** pod-infer compiles against the TFLite 2.16 headers with `-Wall -Wextra`; `clip_test` passes (voting, crop); the full C++ path (C270-style YUYV 640×480 → `crop_to_input` → TFLite CLIP) names 9 of 9 test photos right (deer, moose, fox, raccoon, owl, bear, cat, teddy → bear, empty room → nothing). **Unknown until it runs on the Pi:** CLIP time per check on the Pi 5 (expect a few hundred ms with 1 thread) and its effect on detector latency.
+
+On the Pi after `deploy.sh`: build as above, then `./build/infer/clip_test` and restart the Pod.

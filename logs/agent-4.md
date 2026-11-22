@@ -37,3 +37,8 @@ Append-only. Written by agent-4 only.
 **Files:** `ground/dashboard/sim/charts.js`, `ground/dashboard/sim/index.html`, `ground/dashboard/sim/sim.js`, `ground/dashboard/sim/README.md`, `ground/dashboard/sim/.gitignore`, `demo/laptop_detector.py`
 **Notes:** History source: ?history=, else ?api= (/api/events, also /api/scene for the 3D view), else live_history.json from the scanner, else labelled fake. Plain JS+SVG, palette validated on the dark panel. Rendered via QuickJS+cairosvg and checked by eye; not yet opened in a real browser.
 
+## 2026-11-22 00:06:06 | agent-4 | - | REVIEW
+**What:** Prototype 1: CLIP animal identification inside pod-infer (QNX TFLite), from the laptop scanner; 53 animals, voting, full-res crops
+**Files:** `pod/infer/clip.h`, `pod/infer/clip_test.cpp`, `pod/infer/main.cpp`, `pod/infer/CMakeLists.txt`, `pod/infer/README.md`, `models/labels.csv`, `models/clip/`, `models/clip_vision.tflite`, `pod/supervisor/pod.conf`, `pod/scripts/deploy.sh`, `demo/laptop_detector.py`
+**Notes:** Human-approved cross-lane (agent-2 pod/infer + models, agent-1 pod.conf + deploy.sh). CLIP ViT-B/32 image tower converted with TF 2.16 to TFLite (builtin ops only), int8 weights 88.5 MB. Laptop checks: compiles vs TFLite 2.16 headers, clip_test passes, C++ YUYV crop + TFLite CLIP 9/9 photos right. NOT run on the Pi yet: needs deploy, build, and a CLIP speed check. Branch prototype-1, not main.
+

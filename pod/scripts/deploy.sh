@@ -19,6 +19,9 @@ cd "$(dirname "$0")/../.."
 
 FILES="pod shared"
 [ -f models/labels.csv ] && FILES="$FILES models/labels.csv"
+# CLIP (prototype 1): animal names + text table, and the image model if it was built/downloaded
+[ -f models/clip/labels.txt ] && FILES="$FILES models/clip/labels.txt models/clip/text.f32"
+[ -f models/clip_vision.tflite ] && FILES="$FILES models/clip_vision.tflite"
 
 echo "deploy: copying $FILES -> $HOST:~/$DIR"
 tar -cf - --exclude=build --exclude=__pycache__ $FILES \
