@@ -107,6 +107,7 @@ struct Options {
     int clip_need = 6, clip_window = 10;
     int clip_threads = 1;
     int clip_prio = 10;              /* worker thread priority (QNX normal = 10), below the detector */
+    std::string scan_status;         /* with-motor: small JSON for pod-servo (seeing / confirmed animal) */
 };
 
 bool parse(int argc, char** argv, Options& o) {
@@ -138,6 +139,7 @@ bool parse(int argc, char** argv, Options& o) {
         else if (a == "--clip-window" && (v = next())) o.clip_window = std::atoi(v);
         else if (a == "--clip-threads" && (v = next())) o.clip_threads = std::atoi(v);
         else if (a == "--clip-prio" && (v = next())) o.clip_prio = std::atoi(v);
+        else if (a == "--scan-status" && (v = next())) o.scan_status = v;
         else {
             std::fprintf(stderr,
                 "usage: pod-infer [--model F] [--labels F] [--shm NAME] [--dets-mq NAME] [--threads N] [--prio N]\n"
@@ -145,7 +147,8 @@ bool parse(int argc, char** argv, Options& o) {
                 "                 [--health-out FILE] [--status SUPERVISOR_STATUS_JSON] [--observe]\n"
                 "                 [--latency-log FILE.csv]\n"
                 "                 [--clip-model F] [--clip-labels F] [--clip-text F] [--clip-min-prob P]\n"
-                "                 [--clip-region S] [--clip-need N] [--clip-window N] [--clip-threads N] [--clip-prio N]\n");
+                "                 [--clip-region S] [--clip-need N] [--clip-window N] [--clip-threads N] [--clip-prio N]\n"
+                "                 [--scan-status FILE]\n");
             return false;
         }
     }
@@ -314,6 +317,9 @@ struct ClipWorker {
     float present_prob = 0.0f;
     uint64_t checks = 0;
     std::vector<int64_t> check_ns;       /* CLIP run times for the stats window */
+    int last_vote = -1;                  /* latest check that voted for an animal (for pod-servo) */
+    int64_t last_vote_ns = 0;
+    uint64_t confirmations = 0;          /* +1 every time a new animal is confirmed ("captured") */
 
     explicit ClipWorker(const Options& opt) : o(opt) {}
     ~ClipWorker() { shutdown(); }   /* every exit path joins the thread */
@@ -429,6 +435,8 @@ struct ClipWorker {
                 std::lock_guard<std::mutex> l(mu);
                 present = voter.present;
                 if (vote >= 0 && vote == voter.present) { present_box = b; present_prob = prob; }
+                if (vote >= 0) { last_vote = vote; last_vote_ns = t1; }
+                if (changed) confirmations++;
                 checks++;
                 check_ns.push_back(t1 - t0);
                 busy = false;
@@ -448,6 +456,21 @@ struct ClipWorker {
         }
     }
 };
+
+/* with-motor: tell pod-servo what the camera is looking at. Rewritten atomically (tmp + rename).
+ *   seeing      animal the latest checks are voting for (within 1.5 s), or null
+ *   confirmed   animal currently confirmed in view, or null
+ *   captures    +1 each time a new animal is confirmed (the servo resumes after it changes) */
+void write_scan_status(const std::string& path, const char* seeing, const char* confirmed, uint64_t captures, int64_t now_ms) {
+    const std::string tmp = path + ".tmp";
+    FILE* f = std::fopen(tmp.c_str(), "w");
+    if (!f) return;
+    auto q = [](const char* sp) { return sp ? std::string("\"") + sp + "\"" : std::string("null"); };
+    std::fprintf(f, "{\"t_ms\":%lld,\"seeing\":%s,\"confirmed\":%s,\"captures\":%llu}\n", static_cast<long long>(now_ms),
+                 q(seeing).c_str(), q(confirmed).c_str(), static_cast<unsigned long long>(captures));
+    std::fclose(f);
+    std::rename(tmp.c_str(), path.c_str());
+}
 
 void print_dets(const pod_detections_t& r, const pod::LabelTable& labels) {
     std::printf("frame %llu t_capture_ns=%lld t_infer_done_ns=%lld e2e=%.1fms n=%u",
@@ -551,6 +574,9 @@ int main(int argc, char** argv) {
     }
     std::vector<uint8_t> clip_frame;     /* full-resolution copy for the CLIP worker */
     bool clip_staged = false;
+    int64_t t_scan_status = 0;
+    uint64_t plain_captures = 0;         /* --scan-status without CLIP: counts new detections */
+    int plain_prev_class = -1;
 
     pod::HealthBeat hb;
     pod::DetsSender tx(o.dets_mq.c_str());
@@ -655,6 +681,28 @@ int main(int argc, char** argv) {
             /* CLIP decides what the animal is: report only the confirmed one (or nothing). */
             r.n_detections = 0;
             if (clipw->current(&r.det[0])) r.n_detections = 1;
+        }
+        if (!o.scan_status.empty() && r.t_infer_done_ns - t_scan_status >= 200000000LL) {   /* 5x per second */
+            t_scan_status = r.t_infer_done_ns;
+            if (clipw) {
+                std::string seeing, confirmed;
+                uint64_t caps;
+                {
+                    std::lock_guard<std::mutex> l(clipw->mu);
+                    if (clipw->last_vote >= 0 && mono_ns() - clipw->last_vote_ns < 1500000000LL)
+                        seeing = clipw->text.labels[static_cast<size_t>(clipw->last_vote)];
+                    if (clipw->present >= 0) confirmed = clipw->text.labels[static_cast<size_t>(clipw->present)];
+                    caps = clipw->confirmations;
+                }
+                write_scan_status(o.scan_status, seeing.empty() ? nullptr : seeing.c_str(),
+                                  confirmed.empty() ? nullptr : confirmed.c_str(), caps, wall_ms());
+            } else {
+                const int cls = r.n_detections ? r.det[0].class_id : -1;
+                if (cls >= 0 && cls != plain_prev_class) plain_captures++;
+                plain_prev_class = cls;
+                const char* sp = cls >= 0 ? labels.name(cls) : nullptr;
+                write_scan_status(o.scan_status, sp, sp, plain_captures, wall_ms());
+            }
         }
         const bool unsent = send_dets && !tx.send(r);   /* every frame, even with 0 detections */
         hb.beat();

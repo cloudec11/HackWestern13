@@ -42,3 +42,8 @@ Append-only. Written by agent-4 only.
 **Files:** `pod/infer/clip.h`, `pod/infer/clip_test.cpp`, `pod/infer/main.cpp`, `pod/infer/CMakeLists.txt`, `pod/infer/README.md`, `models/labels.csv`, `models/clip/`, `models/clip_vision.tflite`, `pod/supervisor/pod.conf`, `pod/scripts/deploy.sh`, `demo/laptop_detector.py`
 **Notes:** Human-approved cross-lane (agent-2 pod/infer + models, agent-1 pod.conf + deploy.sh). CLIP ViT-B/32 image tower converted with TF 2.16 to TFLite (builtin ops only), int8 weights 88.5 MB. Laptop checks: compiles vs TFLite 2.16 headers, clip_test passes, C++ YUYV crop + TFLite CLIP 9/9 photos right. NOT run on the Pi yet: needs deploy, build, and a CLIP speed check. Branch prototype-1, not main.
 
+## 2026-11-22 02:59:02 | agent-4 | - | REVIEW
+**What:** with-motor: pod-servo pans the webcam on a 180-degree servo, stops while an animal is seen, resumes after capture
+**Files:** `pod/servo/servo.py`, `pod/servo/README.md`, `pod/infer/main.cpp`, `pod/supervisor/pod.conf`
+**Notes:** pod-infer --scan-status writes {seeing, confirmed, captures} 5x/s; pod-servo (Python, QNX rpi_gpio hardware PWM GPIO18/pin 12, 50 Hz MS mode) runs at normal priority under the supervisor. Laptop dry-run tested; not run on the Pi with the servo yet. Branch with-motor (on top of the CLIP merge).
+
