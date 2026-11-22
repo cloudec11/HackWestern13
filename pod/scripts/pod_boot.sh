@@ -63,8 +63,13 @@ waitfor /dev/sensor/camera5 20 || echo "WARNING: /dev/sensor/camera5 did not app
 
 POD_GROUND_URL=http://172.20.10.9:8000
 [ -f $POD_HOME/pod.env ] && . $POD_HOME/pod.env
-echo "starting pod-supervisor, ground $POD_GROUND_URL"
 cd $DIR || exit 1
+# Ground station on the Pi itself (opt-in: POD_RUN_GROUND=1 in ~/pod.env). Started before the
+# supervisor so pod-uplink finds it. Not supervised: see pod/scripts/ground_on_pi.sh.
+if [ "${POD_RUN_GROUND:-0}" = 1 ]; then
+    HOME=$POD_HOME on -u $POD_IDS sh $DIR/pod/scripts/ground_on_pi.sh start
+fi
+echo "starting pod-supervisor, ground $POD_GROUND_URL"
 HOME=$POD_HOME POD_GROUND_URL=$POD_GROUND_URL \
     on -d -u $POD_IDS ./build/supervisor/pod-supervisor --conf pod/supervisor/pod.conf \
     --state pod-data/supervisor >> $DATA/supervisor.log 2>&1
