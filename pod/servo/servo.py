@@ -34,6 +34,20 @@ import time
 SWEEP, HOLD = "sweep", "hold"
 
 
+def write_report(path, **fields):
+    """Debug status for pod-view's page (/servo.json): what the servo is doing right now."""
+    if not path:
+        return
+    fields["t_ms"] = int(time.time() * 1000)
+    try:
+        tmp = path + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(fields, f)
+        os.replace(tmp, path)
+    except OSError:
+        pass
+
+
 def read_status(path, max_age_s):
     """The latest status, or None if missing/old (pod-infer stopped): then we just keep sweeping."""
     try:
@@ -98,9 +112,18 @@ def main():
     p.add_argument("--max-hold", type=float, default=10.0, help="give up on an unconfirmed animal after this many seconds")
     p.add_argument("--tick", type=float, default=0.05, help="control loop period, seconds")
     p.add_argument("--dry-run", action="store_true", help="no GPIO: print what it would do")
+    p.add_argument("--report", default="pod-data/servo.json", help="debug status file, shown by pod-view ('' = off)")
     args = p.parse_args()
 
-    servo = Servo(args)
+    try:
+        servo = Servo(args)
+    except Exception as e:                          # e.g. no rpi_gpio module, /dev/gpio permission
+        msg = f"{type(e).__name__}: {e}"
+        print(f"pod-servo: cannot start the servo: {msg}", flush=True)
+        write_report(args.report, state="error", error=msg, pin=args.pin, pulses=False, angle=None)
+        return 1
+    started_ms, moves = int(time.time() * 1000), 0
+    last_report = 0.0
     stop = {"now": False}
     signal.signal(signal.SIGTERM, lambda *a: stop.update(now=True))
     signal.signal(signal.SIGINT, lambda *a: stop.update(now=True))
@@ -140,6 +163,7 @@ def main():
                 elif angle <= args.min_angle:
                     angle, direction = args.min_angle, 1.0
                 servo.move(angle)
+                moves += 1
                 relax_at, next_step_at = now + args.settle, now + args.settle + args.rest
             elif now >= relax_at:
                 servo.relax()
@@ -157,12 +181,26 @@ def main():
 
         if servo.driving:
             driven_s += args.tick
+        if now - last_report >= 0.25:
+            if state == SWEEP:
+                label = "turning" if now >= ignore_until else "turning (ignoring camera for a moment)"
+            elif resume_at:
+                label = f"captured {confirmed or seeing or 'animal'}, moving on soon"
+            else:
+                label = f"stopped: looking at {seeing or 'an animal'}"
+            write_report(args.report, state=state, label=label, angle=round(angle, 1), pulses=servo.driving,
+                         duty_pct=round(servo.duty(angle), 2) if servo.driving else 0.0, pin=args.pin,
+                         moves=moves, seeing=seeing, confirmed=confirmed, captures=captures,
+                         status_file_ok=st is not None, dry_run=args.dry_run, started_ms=started_ms, error=None)
+            last_report = now
         if args.dry_run and now - last_print > 1.0:
             print(f"  {state:5s} angle {angle:5.1f} {'PULSES' if servo.driving else 'relaxed'}  seeing={seeing} captures={captures}", flush=True)
             last_print = now
         time.sleep(args.tick)
 
     servo.relax()
+    write_report(args.report, state="stopped", label="servo program stopped", angle=round(angle, 1), pulses=False,
+                 pin=args.pin, moves=moves, started_ms=started_ms, error=None)
     print(f"pod-servo: motor powered {100 * driven_s / max(1e-6, time.time() - started):.0f}% of the time", flush=True)
     servo.close(angle)
     print("pod-servo: stopped", flush=True)

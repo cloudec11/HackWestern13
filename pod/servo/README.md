@@ -44,3 +44,20 @@ Uses QNX's `rpi_gpio` Python module (hardware PWM, 50 Hz, MS mode). If it fails 
 ## Tested
 
 On the laptop only (`--dry-run` against a scripted status file): stops on a new animal, moves on 2 s after it's captured, doesn't stop again on the same captured animal, gives up on an unconfirmed one once. pod-infer's `--scan-status` compiles against the TFLite 2.16 headers. **Not yet run with the real servo on the Pi.**
+
+## Debugging: what is the servo doing?
+
+- **Live page:** `http://qnxpi.local:8080` has a **Servo** box under "Detected now", updated twice a second:
+  - `turning` (angle, whether it's sending pulses right now, GPIO pin, number of steps)
+  - `stopped: looking at deer` / `captured deer, moving on soon`
+  - **red `error`** with the reason (e.g. `/dev/gpio` permission, missing `rpi_gpio` module)
+  - **orange `not updating`** = pod-servo stopped or crashed (check `pod-data/supervisor.log`)
+  - `no servo status` = pod-servo has never run with this pod-view
+- **Raw data (for scripts / another Claude):** `curl http://qnxpi.local:8080/servo.json`
+  ```
+  {"now_ms": ..., "servo": {"state": "sweep", "label": "turning", "angle": 96.0, "pulses": true,
+   "duty_pct": 7.83, "pin": 18, "moves": 41, "seeing": null, "confirmed": null, "captures": 2,
+   "status_file_ok": true, "dry_run": false, "started_ms": ..., "error": null, "t_ms": ...}}
+  ```
+  `now_ms - servo.t_ms` = age of the status (Pi clock). `moves` going up + `pulses` toggling = the program is commanding the servo; if that's true and the motor doesn't move, the problem is wiring/power (shared ground!) or PWM on that pin.
+- The file itself is `pod-data/servo.json` (`--report`; pod-view reads it with `--servo`, same default path).

@@ -52,3 +52,8 @@ Append-only. Written by agent-4 only.
 **Files:** `pod/servo/servo.py`, `pod/servo/README.md`
 **Notes:** Pulses about 40% of the time while sweeping, none while holding on an animal. Still needs its own 5-6 V supply with shared ground; README updated. Dry-run tested.
 
+## 2026-11-22 03:35:32 | agent-4 | - | REVIEW
+**What:** Servo debug status: pod-servo writes pod-data/servo.json, pod-view serves /servo.json and shows a Servo box on its page
+**Files:** `pod/servo/servo.py`, `pod/servo/README.md`, `pod/capture/view.cpp`
+**Notes:** States: turning / stopped looking at X / captured / error (with reason) / not updating (stale > 5 s, Pi clock). pod-view wraps the file with its own now_ms. view.cpp compile-checked (-Wall -Wextra) on the laptop; servo report tested in dry-run and error cases. Needs pod-view rebuilt on the Pi (deploy.sh builds capture).
+

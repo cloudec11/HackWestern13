@@ -18,6 +18,7 @@
  *
  * HTTP:  /  page,  /stream  MJPEG,  /snapshot.jpg  one frame,  /status.json  detections + stats,
  *        /weather.json  the Pod's location + weather (file from pod/uplink/weather.py).
+ *        /servo.json    what the camera servo is doing (file from pod/servo/servo.py, with-motor).
  * Privacy: frames only ever live in memory and on the wire to the browser. Nothing is written.
  */
 #include <arpa/inet.h>
@@ -52,6 +53,7 @@ namespace {
 
 std::atomic<bool> g_stop{false};
 std::string g_weather_path = "pod-data/weather.json";   // written by pod/uplink/weather.py
+std::string g_servo_path = "pod-data/servo.json";       // written by pod/servo/servo.py (with-motor)
 void on_signal(int) { g_stop = true; }
 
 int64_t mono_ns() {
@@ -245,6 +247,7 @@ h1{font-size:18px;margin:0 0 8px}
 <div style="flex:2;min-width:300px"><img src="/stream" alt="live camera"></div>
 <aside><h1>Detected now</h1><div id="dets" class="muted">waiting...</div>
 <p class="muted" id="stats"></p>
+<h1 style="margin-top:14px">Servo</h1><div id="servo" class="det" style="display:block">waiting...</div>
 <p class="muted">Live only. Nothing is saved. People are never detected.</p></aside>
 </main><script>
 async function tick(){
@@ -257,6 +260,17 @@ async function tick(){
     document.getElementById('stats').textContent=
       `${s.width}x${s.height} at ${s.fps.toFixed(1)} fps shown`+
       (s.e2e_ms>=0?` | camera to detection ${s.e2e_ms.toFixed(0)} ms`:'');
+  }catch(e){}
+  try{
+    const r=await (await fetch('/servo.json',{cache:'no-store'})).json();
+    const v=document.getElementById('servo'), s=r.servo;
+    if(!s){v.innerHTML='<span class="muted">no servo status: pod-servo is not running</span>';}
+    else{
+      const age=(r.now_ms-s.t_ms)/1000;
+      if(age>5) v.innerHTML=`<b style="color:#f0a040">not updating</b> <span class="muted">(last update ${age.toFixed(0)} s ago: ${s.label||s.state})</span>`;
+      else if(s.state==='error') v.innerHTML=`<b style="color:#ff6b6b">error</b><div class="muted">${s.error}</div>`;
+      else v.innerHTML=`<b>${s.label||s.state}</b><div class="muted">angle ${s.angle}&deg; | ${s.pulses?'sending pulses ('+s.duty_pct+'%)':'resting, no pulses'} | GPIO${s.pin} | ${s.moves} steps${s.status_file_ok?'':' | no AI status file'}${s.dry_run?' | DRY RUN':''}</div>`;
+    }
   }catch(e){}
   setTimeout(tick,500);
 }
@@ -323,6 +337,18 @@ void serve_client(int fd, State& st, const std::map<int, std::string>& labels, b
         send_text(fd, "text/html; charset=utf-8", kPage);
     } else if (p == "/status.json") {
         send_text(fd, "application/json", status_json(st, labels, tap));
+    } else if (p == "/servo.json") {
+        /* Wrap the file with the Pi's clock so the page can tell a stale status from a live one. */
+        std::ifstream f(g_servo_path);
+        std::stringstream ss;
+        if (f) ss << f.rdbuf();
+        std::string body = ss.str();
+        while (!body.empty() && (body.back() == '\n' || body.back() == '\r')) body.pop_back();
+        timespec ts;
+        clock_gettime(CLOCK_REALTIME, &ts);
+        const long long now_ms = static_cast<long long>(ts.tv_sec) * 1000 + ts.tv_nsec / 1000000;
+        send_text(fd, "application/json", "{\"now_ms\":" + std::to_string(now_ms) + ",\"servo\":" +
+                                              (f && !body.empty() ? body : std::string("null")) + "}");
     } else if (p == "/weather.json") {
         std::ifstream f(g_weather_path);
         std::stringstream ss;
@@ -379,6 +405,7 @@ int main(int argc, char** argv) {
         else if (a == "--dets-in") o.dets_in = v;
         else if (a == "--dets-out") o.dets_out = v;
         else if (a == "--weather") g_weather_path = v;
+        else if (a == "--servo") g_servo_path = v;
         else { std::fprintf(stderr, "pod-view: unknown option %s\n", a.c_str()); return 2; }
     }
     signal(SIGPIPE, SIG_IGN);
