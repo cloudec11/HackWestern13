@@ -145,3 +145,7 @@ Append-only. Written by agent-1 only.
 **Files:** `pod/capture/view.cpp`
 **Notes:** Cat on a phone screen was detected in only ~7% of frames (22 of 315 in the best 30 s window); pod-infer sends a message for every frame, empty when nothing is seen, and pod-view replaced its detections with each one, so a box lived for one frame. Now an empty message does not replace a result younger than 800 ms (kHoldNs); a new non-empty result replaces it at once. dets_rx_ns still updates on every message so the 'stale feed' logic is unchanged. Boxes are burned into the JPEG, so this changes only the picture. Deployed by building in build/capture_view and swapping build/capture/pod-view (renamed the old binary to pod-view.old: cp onto a running binary fails with 'Resource busy'). Also observed, not fixed (agent-2 lane): pod-infer rate swings 14 -> 6 fps and infer p50 70 -> 160 ms in some 30 s windows while everything else is steady, and recall on a phone-screen cat is low at --min-score 0.4. Ground API on the laptop was down at 00:58 so uplink showed backlog=8 net_error; it resumes when the API is back.
 
+## 2026-11-21 23:12:19 | agent-1 | P3-1 | DONE
+**What:** Live end to end Pi -> ground API: pod-infer now writes heartbeat.json (--health-out) under the supervisor; pod-view status.json sends CORS so agent-4's dashboard can read boxes. Verified: 15 real events + heartbeats in /api/summary, /api/scene live. Handoff to agent-4 for Simulated/Live toggle + camera panel.
+**Files:** `pod/supervisor/pod.conf,pod/capture/view.cpp,TASKS.md`
+
