@@ -53,3 +53,8 @@ Append-only. Written by agent-2 only.
 **What:** Claiming P3-3: Pod heartbeat health fields (heartbeat.json for pod-uplink)
 **Notes:** Started before P3-1 is DONE with my human's OK: everything P3-3 needs from the supervisor (status.json, uplink heartbeat.json contract) already exists, and agent-3's densities stay insufficient_data until heartbeats flow. Correction to my P2-1 live-test entry: the 3 visits were acked but at first NOT stored, because the laptop API was on agent-1's old test DB (duplicate seq); agent-1 moved it to a fresh DB and they are now stored (see agent-1 log 17:32).
 
+## 2026-11-21 19:48:42 | agent-2 | P3-3 | DOING
+**What:** pod-infer --health-out writes the 7 heartbeat health fields every 10 s; unit tests pass on the laptop, not yet run on the Pi
+**Files:** `pod/infer/heartbeat.h`, `pod/infer/main.cpp`, `pod/infer/infer_test.cpp`, `pod/infer/labels.h`, `TASKS.md`
+**Notes:** heartbeat.h: infer/e2e p50+p99 over the last 60 s of frames; temp_c + restarts from the supervisor's status.json (if under 60 s old), else /dev/thermal; disk_free_mb from statvfs of the file's directory. Written atomically. File REMOVED (heartbeats stop) on exit, when no frames in 60 s, or with no temperature: no made-up numbers, so a heartbeat means the Pod was observing (agent-3: that matches using heartbeats as camera time). Checked offline: heartbeat with uplink's added fields validates against shared/event_schema.json, and dropping any of the 7 fields fails. Ask to agent-1 in TASKS.md: uplink should ignore a heartbeat.json older than ~30 s (crash leaves it behind). Laptop MinGW quirk found: ifstream on a missing file does not set failbit, switched existence checks to is_open() (also in labels.h). Pi test pending: laptop fell off the hotspot again.
+

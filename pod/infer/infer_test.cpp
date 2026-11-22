@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "heartbeat.h"
 #include "labels.h"
 #include "preprocess.h"
 
@@ -72,8 +73,92 @@ static void test_labels(const std::string& real) {
     std::remove(bad);
 }
 
+static bool file_exists(const char* p) { std::ifstream f(p); return f.is_open(); }
+static std::string slurp(const char* p) { std::ifstream f(p); std::string s, l; while (std::getline(f, l)) s += l; return s; }
+static void put(const char* p, const char* s) { std::ofstream f(p); f << s; }
+
+static void test_latency_window() {
+    pod::LatencyWindow w(60000000000LL);
+    for (int i = 1; i <= 100; ++i) w.add(i * 100000000LL, i * 1000000LL, i * 2000000LL);   /* 1..100 ms */
+    CHECK(w.size() == 100);
+    CHECK(near(static_cast<int>(w.infer_ms(0.50)), 51, 1));
+    CHECK(static_cast<int>(w.infer_ms(0.99)) == 99);
+    CHECK(static_cast<int>(w.e2e_ms(1.0)) == 200);
+    w.trim(100000000LL * 100 + 60000000000LL - 450000000LL);       /* keeps t >= 9.55 s: the last 5 */
+    CHECK(w.size() == 5);
+    w.trim(1LL << 50);
+    CHECK(w.size() == 0 && w.infer_ms(0.5) == 0.0);
+}
+
+static void test_parse_status() {
+    pod::SupervisorStatus s = pod::parse_status(
+        "{\"t_wall_ms\":1795300000000,\"temp_c\":52.3,\"restarts\":2,\"children\":[{\"name\":\"capture\",\"restarts\":2}]}");
+    CHECK(s.found && s.t_wall_ms == 1795300000000LL);
+    CHECK(s.temp_c > 52.2 && s.temp_c < 52.4);
+    CHECK(s.restarts == 2);                                          /* top-level, not the child's */
+    s = pod::parse_status("{\"t_wall_ms\":5,\"temp_c\":null,\"restarts\":0,\"children\":[]}");
+    CHECK(s.found && std::isnan(s.temp_c) && s.restarts == 0);
+    s = pod::parse_status("garbage");
+    CHECK(!s.found && std::isnan(s.temp_c));
+}
+
+static void test_health_writer() {
+    const char* out = "infer_test_heartbeat.json";
+    const char* status = "infer_test_status.json";
+    const char* thermal = "infer_test_thermal";
+    const int64_t now_wall = 1795300000000LL;
+    std::remove(out); std::remove(thermal);
+
+    pod::HealthWriter h(out, status, 10000000000LL);
+    h.set_thermal_path(thermal);
+    /* no frames yet: nothing to report, no file */
+    CHECK(h.maybe_write(1000000000LL, now_wall) != nullptr && !file_exists(out));
+
+    for (int i = 0; i < 50; ++i) h.add(2000000000LL + i * 66000000LL, 67000000LL, 90000000LL);
+    put(status, "{\"t_wall_ms\":1795300000000,\"temp_c\":48.5,\"restarts\":1,\"children\":[]}");
+    CHECK(h.maybe_write(5000000000LL, now_wall) == nullptr);        /* < 10 s since the last try */
+    const char* r = h.maybe_write(12000000000LL, now_wall + 1000);
+    CHECK(r && !*r && file_exists(out));
+    const std::string j = slurp(out);
+    CHECK(j == "{\"infer_p50_ms\":67.00,\"infer_p99_ms\":67.00,\"e2e_p50_ms\":90.00,\"e2e_p99_ms\":90.00,"
+               "\"temp_c\":48.5,\"disk_free_mb\":" + std::to_string(std::atol(j.substr(j.find("disk_free_mb\":") + 14).c_str())) +
+               ",\"restarts\":1}");
+
+    /* supervisor has no temperature and there is no thermal device: file removed */
+    put(status, "{\"t_wall_ms\":1795300000000,\"temp_c\":null,\"restarts\":1,\"children\":[]}");
+    r = h.maybe_write(23000000000LL, now_wall + 2000);
+    CHECK(r && std::string(r) == "no temperature reading" && !file_exists(out));
+    /* ... but a thermal device reading is used instead */
+    put(thermal, "51.0\n");
+    r = h.maybe_write(34000000000LL, now_wall + 3000);
+    CHECK(r && !*r && slurp(out).find("\"temp_c\":51.0") != std::string::npos);
+    /* stale status.json (supervisor gone): thermal temp, restarts 0 */
+    put(status, "{\"t_wall_ms\":1795200000000,\"temp_c\":40.0,\"restarts\":7,\"children\":[]}");
+    r = h.maybe_write(45000000000LL, now_wall + 4000);
+    CHECK(r && !*r && slurp(out).find("\"restarts\":0") != std::string::npos &&
+          slurp(out).find("\"temp_c\":51.0") != std::string::npos);
+    /* frames stop for > 60 s: file removed */
+    r = h.maybe_write(130000000000LL, now_wall + 90000);
+    CHECK(r && std::string(r) == "no frames in the last 60 s" && !file_exists(out));
+    /* remove() on exit */
+    h.add(131000000000LL, 1, 1);
+    h.maybe_write(141000000000LL, now_wall + 100000);
+    CHECK(file_exists(out));
+    h.remove();
+    CHECK(!file_exists(out));
+    /* disabled writer never touches anything */
+    pod::HealthWriter off("", status);
+    off.add(1, 1, 1);
+    CHECK(off.maybe_write(1LL << 40, now_wall) == nullptr);
+
+    std::remove(status); std::remove(thermal);
+}
+
 int main(int argc, char** argv) {
     const std::string labels = argc > 1 ? argv[1] : "models/labels.csv";
+    test_latency_window();
+    test_parse_status();
+    test_health_writer();
     test_yuv();
     test_sample_map();
     test_yuyv_resize();

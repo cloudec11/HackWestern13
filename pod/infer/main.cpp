@@ -4,6 +4,7 @@
  *   pod-infer [--model models/efficientdet_lite0.tflite] [--labels models/labels.csv]
  *             [--shm /pod_frames] [--threads 3] [--prio 0] [--min-score 0.4]
  *             [--dets-mq /pod_dets] [--seconds 0] [--stats 5] [--quiet]
+ *             [--health-out pod-data/uplink/heartbeat.json] [--status pod-data/supervisor/status.json]
  *   pod-infer --ppm image.ppm [--model ...] [--labels ...]     one still image, then exit
  *
  * Needs I/O privilege on QNX (run as root): XNNPACK's cpuinfo reads a privileged CPU register.
@@ -16,6 +17,10 @@
  *   pre   = ring acquire -> model input ready
  *   infer = model run (Invoke)
  *   e2e   = t_infer_done_ns - t_capture_ns (camera callback -> detections ready)
+ *
+ * --health-out (P3-3): every 10 s, write the Pod health fields for pod-uplink's heartbeat
+ * (see heartbeat.h). Off unless given. The file is removed on exit and whenever there is
+ * nothing honest to report (no frames in 60 s, no temperature).
  */
 #include <pthread.h>
 #include <sched.h>
@@ -38,6 +43,7 @@
 
 #include "dets_mq.h"
 #include "health.h"
+#include "heartbeat.h"
 #include "labels.h"
 #include "pod_msgs.h"
 #include "preprocess.h"
@@ -54,11 +60,19 @@ int64_t mono_ns() {
     return static_cast<int64_t>(ts.tv_sec) * 1000000000LL + ts.tv_nsec;
 }
 
+int64_t wall_ms() {
+    timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    return static_cast<int64_t>(ts.tv_sec) * 1000 + ts.tv_nsec / 1000000;
+}
+
 struct Options {
     std::string model = "models/efficientdet_lite0.tflite";
     std::string labels = "models/labels.csv";
     std::string shm = "/pod_frames";
     std::string dets_mq = pod::kDetsMq;
+    std::string health_out;
+    std::string status = "pod-data/supervisor/status.json";
     std::string ppm;
     int threads = 3;
     int prio = 0;
@@ -77,6 +91,8 @@ bool parse(int argc, char** argv, Options& o) {
         else if (a == "--labels" && (v = next())) o.labels = v;
         else if (a == "--shm" && (v = next())) o.shm = v;
         else if (a == "--dets-mq" && (v = next())) o.dets_mq = v;
+        else if (a == "--health-out" && (v = next())) o.health_out = v;
+        else if (a == "--status" && (v = next())) o.status = v;
         else if (a == "--ppm" && (v = next())) o.ppm = v;
         else if (a == "--threads" && (v = next())) o.threads = std::atoi(v);
         else if (a == "--prio" && (v = next())) o.prio = std::atoi(v);
@@ -87,7 +103,8 @@ bool parse(int argc, char** argv, Options& o) {
         else {
             std::fprintf(stderr,
                 "usage: pod-infer [--model F] [--labels F] [--shm NAME] [--dets-mq NAME] [--threads N] [--prio N]\n"
-                "                 [--min-score S] [--seconds N] [--stats N] [--quiet] [--ppm IMAGE]\n");
+                "                 [--min-score S] [--seconds N] [--stats N] [--quiet] [--ppm IMAGE]\n"
+                "                 [--health-out FILE] [--status SUPERVISOR_STATUS_JSON]\n");
             return false;
         }
     }
@@ -310,12 +327,15 @@ int main(int argc, char** argv) {
     pod::HealthBeat hb;
     pod::DetsSender tx(o.dets_mq.c_str());
     const bool send_dets = !o.dets_mq.empty();
+    pod::HealthWriter health(o.health_out, o.status);
     pod::ShmRing ring;
     if (!open_ring(ring, o.shm, 50)) { std::fprintf(stderr, "pod-infer: cannot open ring %s (is pod-capture running?)\n", o.shm.c_str()); return 1; }
     std::printf("pod-infer: reading %s, sending to %s, min score %.2f, prio %d%s\n", o.shm.c_str(),
                 send_dets ? o.dets_mq.c_str() : "(nothing)", static_cast<double>(o.min_score),
                 o.prio, hb.attached() ? ", supervised" : "");
+    if (health.enabled()) std::printf("pod-infer: health -> %s every 10 s (status from %s)\n", o.health_out.c_str(), o.status.c_str());
     std::fflush(stdout);
+    const char* last_health_problem = nullptr;
 
     Window win, total;
     uint64_t last = 0;
@@ -324,6 +344,16 @@ int main(int argc, char** argv) {
     const int64_t t_end = o.seconds > 0 ? t_start + static_cast<int64_t>(o.seconds) * 1000000000LL : 0;
 
     while (!g_stop && (t_end == 0 || mono_ns() < t_end)) {
+        /* Health file: report the first write, each new problem, and each recovery. */
+        if (const char* why = health.maybe_write(mono_ns(), wall_ms())) {
+            const bool was_ok = last_health_problem && !*last_health_problem;
+            if (*why && (!last_health_problem || std::strcmp(why, last_health_problem) != 0))
+                std::fprintf(stderr, "pod-infer: no health file: %s\n", why);
+            else if (!*why && !was_ok)
+                std::printf("pod-infer: health %s", health.last_json().c_str());
+            std::fflush(stdout);
+            last_health_problem = why;
+        }
         if (!ring.ring.wait(500) && mono_ns() - t_last_frame > 2000000000LL) {
             /* No frames for 2 s: pod-capture may have restarted with a new ring. */
             if (open_ring(ring, o.shm, 1)) last = 0;
@@ -350,6 +380,7 @@ int main(int argc, char** argv) {
         det.collect(labels, o.min_score, &r);
         const bool unsent = send_dets && !tx.send(r);   /* every frame, even with 0 detections */
         hb.beat();
+        health.add(r.t_infer_done_ns, r.t_infer_done_ns - t1, r.t_infer_done_ns - r.t_capture_ns);
         t_last_frame = r.t_infer_done_ns;
 
         for (Window* w : {&win, &total}) {
@@ -370,5 +401,6 @@ int main(int argc, char** argv) {
         }
     }
     print_stats("total", total, static_cast<double>(mono_ns() - t_start) / 1e9);
+    health.remove();   /* no stale health numbers after we stop */
     return 0;
 }

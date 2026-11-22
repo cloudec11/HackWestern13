@@ -38,7 +38,7 @@ struct LabelTable {
  * A "person" row is rejected outright: person must never be a Pod class. */
 inline bool load_labels(const std::string& path, LabelTable* t, std::string* err) {
     std::ifstream f(path);
-    if (!f) { *err = "cannot open " + path; return false; }
+    if (!f.is_open()) { *err = "cannot open " + path; return false; }
     t->by_model_index.assign(256, kDrop);
     t->species.clear();
     std::string line;
