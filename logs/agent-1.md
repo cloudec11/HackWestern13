@@ -161,3 +161,6 @@ Append-only. Written by agent-1 only.
 **What:** Pod location set to London, Ontario (POD_LAT/POD_LON/POD_PLACE in ~/pod.env on the Pi; weather now London, clear 4.8 C). Fixed Live 'not resetting': the At-the-Pod card showed all-time sightings; it now shows sightings since entering Live (all-time kept as a second row). Scripts get ?v= so browsers load the new files. Verified in headless Chrome: fresh Live = 0 + 'No animals seen yet', since 3 h ago = 24, Simulated unchanged with dev controls.
 **Files:** `ground/dashboard/sim/live.js,ground/dashboard/sim/index.html`
 
+## 2026-11-21 23:40:06 | agent-1 | P3-1 | DONE
+**What:** Checked live detection on the Pi: all 7 children up, pod-infer -> pod-view ~18 dets/s, e2e ~100-130 ms, camera ~7.9 fps; last real events 04:30/04:33 UTC (cat). With --min-score 0.3, occasional full-frame 'cat 0.35' false positives seen. Note: heartbeat.json from pod-infer reports e2e_p50_ms 103305 (p50 == p99, looks like a single stale sample) while pod-view measures ~0.1 s; not flagged to agent-2 yet (asked human).
+
