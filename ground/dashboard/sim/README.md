@@ -31,6 +31,11 @@ URL options, for testing or the demo:
 
 The panel in the bottom right does the same live. It is temporary until the nav bar exists.
 
+**Captured strip** (bottom of the Pod camera panel, live mode). Each time pod-infer *confirms* an animal, the strip adds a snapshot with the species and time, newest first.
+- **When it snaps:** it watches pod-view's `/servo.json`, where `captures` goes up by 1 on each confirmation. It then fetches `/snapshot.jpg`, the current frame with the box drawn on the Pi. At that moment the servo is holding still on the animal. The visit record is only written once the animal has left, which is too late for a photo.
+- **Storage:** the newest 6 snapshots are kept in this browser (`localStorage`). They survive a reload, and "reset counts" clears them.
+- **Needs** pod-servo running: it's the program that publishes the capture count. Without it, the strip says so.
+
 ## Charts panel
 
 The **Charts** button (top right) opens a panel about the animals seen in this area:

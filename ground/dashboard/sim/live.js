@@ -47,7 +47,9 @@
       location.search = p.toString();
     };
   });
+  var CAP_KEY = 'pod-captures-v1';     // capture snapshots kept in this browser (see "Captured strip" below)
   document.getElementById('cam-reset').onclick = function () {
+    try { localStorage.removeItem(CAP_KEY); } catch (e) {}
     location.search = liveParams(new URLSearchParams(location.search), true).toString();
   };
   document.body.classList.toggle('live', mode === 'live');
@@ -91,6 +93,74 @@
       .then(function () { setTimeout(poll, 700); });
   }
   poll();
+
+  // ---- Captured strip (bottom of the camera panel) ----
+  // pod-infer confirms an animal (CLIP vote) -> scan.json captures +1 -> pod-servo copies it into
+  // pod-view's /servo.json. That's the moment to snap: the servo then holds still on the animal for
+  // a couple of seconds, so /snapshot.jpg (current frame, boxes drawn on the Pi) shows it. The visit
+  // record itself is only written once the animal has left, so it would be too late for a photo.
+  // Snapshots are kept in this browser (localStorage, newest 6); "reset counts" clears them.
+  var capsList = document.getElementById('cam-caps');
+  var capsNote = document.getElementById('cam-caps-note');
+  var caps = [];
+  try { caps = JSON.parse(localStorage.getItem(CAP_KEY) || '[]'); } catch (e) { caps = []; }
+  var lastStart = null, lastCaptures = null, newestT = 0;
+
+  function renderCaps() {
+    capsList.innerHTML = caps.length
+      ? caps.map(function (c) {
+          return '<li' + (c.t === newestT ? ' class="new"' : '') + '><img src="' + c.img + '" alt="' + esc(c.species) +
+                 ' captured"><b>' + esc(c.species) + '</b>' + new Date(c.t).toTimeString().slice(0, 8) + '</li>';
+        }).join('')
+      : '<li class="none">Nothing captured yet. A snapshot appears here when an animal is confirmed.</li>';
+  }
+  function saveCaps() {
+    for (var keep = caps.length; keep > 0; keep--) {
+      try { localStorage.setItem(CAP_KEY, JSON.stringify(caps.slice(0, keep))); return; }
+      catch (e) { /* storage full: keep fewer */ }
+    }
+  }
+  function snap(species) {
+    fetch(POD + '/snapshot.jpg?t=' + Date.now(), { cache: 'no-store' })
+      .then(function (r) { if (!r.ok) throw new Error('snapshot ' + r.status); return r.blob(); })
+      .then(function (b) {
+        return new Promise(function (ok, fail) {
+          var fr = new FileReader(); fr.onload = function () { ok(fr.result); }; fr.onerror = fail; fr.readAsDataURL(b);
+        });
+      })
+      .then(function (url) {
+        newestT = Date.now();
+        caps.unshift({ species: species, t: newestT, img: url });
+        caps = caps.slice(0, 6);
+        saveCaps();
+        renderCaps();
+      })
+      .catch(function () { capsNote.textContent = 'snapshot failed'; });
+  }
+  function pollCaptures() {
+    fetch(POD + '/servo.json', { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (r) {
+        var s = r.servo;
+        if (!s || s.state === 'error' || s.state === 'stopped' || typeof s.captures !== 'number') {
+          capsNote.textContent = 'needs pod-servo running';
+          return;
+        }
+        capsNote.textContent = s.state === 'hold' ? 'looking at ' + (s.seeing || 'an animal') + '…' : '';
+        if (s.started_ms !== lastStart || lastCaptures === null || s.captures < lastCaptures) {
+          lastStart = s.started_ms; lastCaptures = s.captures;     // page load or servo restart: baseline only
+          return;
+        }
+        if (s.captures > lastCaptures) {
+          lastCaptures = s.captures;
+          snap(s.confirmed || s.seeing || 'animal');
+        }
+      })
+      .catch(function () { capsNote.textContent = 'camera offline'; })
+      .then(function () { setTimeout(pollCaptures, 500); });
+  }
+  renderCaps();
+  pollCaptures();
 
   // ---- "At the Pod" card (bottom right, replaces the dev controls in live mode) ----
   var lp = new URLSearchParams(location.search);

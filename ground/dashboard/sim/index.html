@@ -101,6 +101,17 @@
     text-transform: capitalize; display: flex; gap: 6px; }
   #cam-dets li span { color: #9aa8b5; }
   #cam-dets li.none { background: none; border: 0; color: #9aa8b5; padding: 2px 0; text-transform: none; }
+  /* Captured strip: a snapshot each time pod-infer confirms an animal (live.js, from pod-view /servo.json) */
+  #cam-caps-head { display: flex; align-items: baseline; gap: 8px; margin: 10px 2px 6px; font-size: 12px; color: #9aa8b5; }
+  #cam-caps-head b { color: #e8e6dc; font-size: 13px; }
+  #cam-caps { list-style: none; margin: 0 2px; padding: 0; display: flex; gap: 6px; overflow-x: auto; min-height: 24px; }
+  #cam-caps li { flex: 0 0 auto; width: 88px; font-size: 11px; color: #9aa8b5; }
+  #cam-caps li img { display: block; width: 88px; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 6px;
+    border: 1px solid #2a3340; background: #000; }
+  #cam-caps li b { display: block; color: #e8e6dc; text-transform: capitalize; margin-top: 3px; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; }
+  #cam-caps li.new img { border-color: #ffd166; box-shadow: 0 0 0 2px #ffd16655; }
+  #cam-caps li.none { width: auto; padding: 2px 0; }
   @media (max-width: 760px) { #mode { top: auto; bottom: 16px; } #podinfo { display: none; }
     #cam { bottom: 64px; } }
   @media (max-width: 520px) { #mode { bottom: auto; top: 64px; left: auto; right: 16px; transform: none; } }
@@ -163,6 +174,8 @@
   <img id="cam-img" alt="Live video from the Pod with detection boxes">
   <div id="cam-off" hidden>Camera offline. Is the Pi on the same network? Retrying…</div>
   <ul id="cam-dets"></ul>
+  <div id="cam-caps-head"><b>Captured</b><span id="cam-caps-note"></span></div>
+  <ul id="cam-caps" aria-label="Snapshots of captured animals, newest first"></ul>
 </section>
 
 <button id="charts-toggle" aria-expanded="false" aria-controls="charts">Charts</button>
@@ -199,7 +212,7 @@
 </section>
 
 <!-- ?v= forces browsers to fetch new copies after a change (python http.server sends no cache headers) -->
-<script src="live.js?v=3"></script>
+<script src="live.js?v=4"></script>
 <script src="sim.js?v=3"></script>
 <script src="charts.js?v=3"></script>
 </body>
