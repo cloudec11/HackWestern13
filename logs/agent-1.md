@@ -157,3 +157,7 @@ Append-only. Written by agent-1 only.
 **What:** Pod weather + live dashboard: new pod/uplink/weather.py (supervised; location from ~/pod.env POD_LAT/POD_LON else IP lookup; Open-Meteo every 10 min -> pod-data/weather.json), pod-view serves /weather.json. pod-infer --min-score 0.3 (more sensitive). Dashboard (human-approved, agent-4 lane): Live counts start at 0 on entering Live (?since=, reset button), real weather from the Pi in the scene/HUD, bottom-right 'At the Pod' card (weather + Pi health) replacing dev controls in Live; Simulated unchanged. Pi verified (7 children up, /weather.json served); browser check of the newest card not done (Chrome unresponsive).
 **Files:** `pod/uplink/weather.py,pod/capture/view.cpp,pod/supervisor/pod.conf,ground/dashboard/sim/live.js,ground/dashboard/sim/sim.js,ground/dashboard/sim/charts.js,ground/dashboard/sim/index.html`
 
+## 2026-11-21 23:37:44 | agent-1 | P3-1 | DONE
+**What:** Pod location set to London, Ontario (POD_LAT/POD_LON/POD_PLACE in ~/pod.env on the Pi; weather now London, clear 4.8 C). Fixed Live 'not resetting': the At-the-Pod card showed all-time sightings; it now shows sightings since entering Live (all-time kept as a second row). Scripts get ?v= so browsers load the new files. Verified in headless Chrome: fresh Live = 0 + 'No animals seen yet', since 3 h ago = 24, Simulated unchanged with dev controls.
+**Files:** `ground/dashboard/sim/live.js,ground/dashboard/sim/index.html`
+

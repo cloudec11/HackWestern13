@@ -98,7 +98,8 @@
   var WURL = lp.get('weather_url') || POD + '/weather.json';
   var info = document.getElementById('podinfo');
   info.hidden = false;
-  var weather = null, summary = null;
+  var weather = null, summary = null, sinceCount = null;
+  var SINCE = Number(lp.get('since')) || Date.now();
   var CONDITION = { clear: 'Clear', cloudy: 'Cloudy', rain: 'Rain', storm: 'Storm', snow: 'Snow', fog: 'Fog' };
 
   function ago(ms) {
@@ -117,6 +118,8 @@
     }
     var pod = summary && summary.pods && summary.pods[0];
     var hb = pod && pod.last_heartbeat;
+    if (sinceCount !== null)
+      rows.push(['Sightings since ' + new Date(SINCE).toTimeString().slice(0, 5), String(sinceCount)]);
     if (pod) rows.push(['Sightings (all time)', String(pod.n_events)]);
     if (hb) {
       rows.push(['Pi temperature', hb.temp_c + '°C'], ['AI per frame', Math.round(hb.infer_p50_ms) + ' ms'],
@@ -141,6 +144,12 @@
     if (!API) return;
     fetch(API + '/api/summary', { cache: 'no-store' }).then(function (r) { return r.json(); })
       .then(function (s) { summary = s; }).catch(function () { summary = null; })
+      .then(function () {
+        return fetch(API + '/api/events?limit=10000&since_ms=' + SINCE, { cache: 'no-store' })
+          .then(function (r) { return r.json(); })
+          .then(function (rows) { sinceCount = rows.filter(function (e) { return e.species !== 'unknown'; }).length; })
+          .catch(function () { sinceCount = null; });
+      })
       .then(renderInfo);
   }
   loadWeather(); loadSummary();
