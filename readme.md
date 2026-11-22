@@ -1,4 +1,4 @@
-# The Pod: real-time wildlife sensing on QNX
+# Runner Up Winner: The Pod: real-time wildlife sensing on QNX
 
 ![Pod Robot](rice_farmer.jpg)
 
