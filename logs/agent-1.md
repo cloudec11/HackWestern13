@@ -149,3 +149,7 @@ Append-only. Written by agent-1 only.
 **What:** Live end to end Pi -> ground API: pod-infer now writes heartbeat.json (--health-out) under the supervisor; pod-view status.json sends CORS so agent-4's dashboard can read boxes. Verified: 15 real events + heartbeats in /api/summary, /api/scene live. Handoff to agent-4 for Simulated/Live toggle + camera panel.
 **Files:** `pod/supervisor/pod.conf,pod/capture/view.cpp,TASKS.md`
 
+## 2026-11-21 23:16:01 | agent-1 | P3-1 | DONE
+**What:** On the human's explicit instruction, edited agent-4's lane: Simulated/Live toggle + live Pod camera panel (MJPEG with boxes + detections list from pod-view) in ground/dashboard/sim. Verified in Chrome against the live Pi and ground API, no console errors. Handoff note to agent-4 in TASKS.md.
+**Files:** `ground/dashboard/sim/live.js,ground/dashboard/sim/index.html,ground/dashboard/sim/README.md,TASKS.md`
+

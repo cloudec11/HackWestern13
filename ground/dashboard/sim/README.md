@@ -24,6 +24,8 @@ URL options, for testing or the demo:
 | `scene` | `?scene=/api/scene` | where to load the scene JSON from |
 | `scale` | `?scale=0.5` | fixed render resolution (lower = faster on weak devices) |
 | `api` | `?api=http://localhost:8000` | use agent-3's ground API for the scene (`/api/scene`) and chart history (`/api/events`) |
+| `mode` | `?mode=live` | **Simulated / Live** switch (top centre). `sim` = fake scene + generated history. `live` = ground API (`?api=`, default this host `:8000`) + the Pod camera panel. Default: live if `?api=` is given (live.js) |
+| `pod` | `?pod=http://10.206.112.26:8080` | the Pod's pod-view for the live camera panel (MJPEG `/stream` with boxes drawn on the Pi, detections from `/status.json`). Default `http://qnxpi.local:8080` |
 | `charts` | `?charts=1` | open the charts panel on load |
 | `refresh` | `?refresh=2` | seconds between data reloads (default 30) |
 

@@ -66,6 +66,34 @@
   #ch-tip .th { font-weight: 600; margin-bottom: 4px; text-transform: capitalize; }
   #ch-tip .row { display: flex; align-items: center; gap: 4px; text-transform: capitalize; color: #c3c2b7; }
   #ch-tip .row b { margin-left: auto; padding-left: 12px; color: #f0efec; }
+
+  /* ---- Simulated / Live switch + camera panel (live.js) ---- */
+  #mode { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 5; display: flex; padding: 3px;
+    background: rgba(12,16,22,0.8); border: 1px solid rgba(255,255,255,0.18); border-radius: 10px; }
+  #mode button { font: 600 13px system-ui, sans-serif; color: #c3c2b7; background: none; border: 0; border-radius: 7px;
+    padding: 6px 14px; cursor: pointer; }
+  #mode button[aria-pressed="true"] { color: #f0efec; background: #2a3a50; }
+  #mode button[data-mode="live"][aria-pressed="true"] { background: #1f6f43; }
+  #mode button[data-mode="live"]::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+    background: #6b7785; margin-right: 6px; vertical-align: 1px; }
+  body.live #mode button[data-mode="live"]::before { background: #4ade80; }
+  #cam { bottom: 16px; left: 16px; width: min(400px, calc(100vw - 32px)); z-index: 3; padding: 10px; }
+  #cam .head { display: flex; align-items: baseline; gap: 8px; margin: 0 2px 8px; }
+  #cam .head b { font-size: 14px; }
+  #cam .head a { margin-left: auto; font-size: 12px; color: #8fb8ff; }
+  #cam-stats { font-size: 12px; color: #9aa8b5; }
+  #cam-img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: contain; background: #000; border-radius: 8px; }
+  #cam-off { aspect-ratio: 4 / 3; display: grid; place-items: center; background: #11161d; border-radius: 8px;
+    color: #9aa8b5; font-size: 13px; text-align: center; padding: 0 16px; }
+  #cam [hidden] { display: none !important; }
+  #cam-dets { list-style: none; margin: 8px 2px 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; min-height: 24px; }
+  #cam-dets li { background: #1e2631; border: 1px solid #2a3340; border-radius: 999px; padding: 2px 10px; font-size: 12px;
+    text-transform: capitalize; display: flex; gap: 6px; }
+  #cam-dets li span { color: #9aa8b5; }
+  #cam-dets li.none { background: none; border: 0; color: #9aa8b5; padding: 2px 0; text-transform: none; }
+  @media (max-width: 760px) { #mode { top: auto; bottom: 16px; } body.live #dev { display: none; }
+    #cam { bottom: 64px; } }
+  @media (max-width: 520px) { #mode { bottom: auto; top: 64px; left: auto; right: 16px; transform: none; } }
 </style>
 </head>
 <body>
@@ -108,6 +136,18 @@
 
 <div id="error" hidden></div>
 
+<div id="mode" role="group" aria-label="Data source">
+  <button data-mode="sim" aria-pressed="true" title="Fake scene and generated history, no Pod needed">Simulated</button>
+  <button data-mode="live" aria-pressed="false" title="Real Pod data from the ground API, plus the live camera">Live</button>
+</div>
+
+<section id="cam" class="card" hidden aria-label="Pod camera">
+  <div class="head"><b>Pod camera</b><span id="cam-stats">connecting…</span><a id="cam-link" target="_blank" rel="noopener">open</a></div>
+  <img id="cam-img" alt="Live video from the Pod with detection boxes">
+  <div id="cam-off" hidden>Camera offline. Is the Pi on the same network? Retrying…</div>
+  <ul id="cam-dets"></ul>
+</section>
+
 <button id="charts-toggle" aria-expanded="false" aria-controls="charts">Charts</button>
 <section id="charts" hidden aria-label="Animal appearance charts">
   <div class="top">
@@ -143,5 +183,6 @@
 
 <script src="sim.js"></script>
 <script src="charts.js"></script>
+<script src="live.js"></script>
 </body>
 </html>
