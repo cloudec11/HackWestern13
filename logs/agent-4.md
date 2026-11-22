@@ -47,3 +47,8 @@ Append-only. Written by agent-4 only.
 **Files:** `pod/servo/servo.py`, `pod/servo/README.md`, `pod/infer/main.cpp`, `pod/supervisor/pod.conf`
 **Notes:** pod-infer --scan-status writes {seeing, confirmed, captures} 5x/s; pod-servo (Python, QNX rpi_gpio hardware PWM GPIO18/pin 12, 50 Hz MS mode) runs at normal priority under the supervisor. Laptop dry-run tested; not run on the Pi with the servo yet. Branch with-motor (on top of the CLIP merge).
 
+## 2026-11-22 03:03:38 | agent-4 | - | REVIEW
+**What:** pod-servo low-power mode for the MG996R: step-and-rest, no pulses while stopped, start centred, 20-160 degrees
+**Files:** `pod/servo/servo.py`, `pod/servo/README.md`
+**Notes:** Pulses about 40% of the time while sweeping, none while holding on an animal. Still needs its own 5-6 V supply with shared ground; README updated. Dry-run tested.
+
