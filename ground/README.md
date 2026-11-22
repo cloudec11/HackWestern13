@@ -258,16 +258,20 @@ There are two complementary checks:
 
 The sudden check misses slow declines, because a gradual fall drags the baseline down with it. That's what the trend check is for.
 
-Measured on generated data, 100 datasets each:
+Alerts fire at the **1%-per-direction** level (`ALERT_TAIL`), while the screen still shows the 90% range. A dashboard runs about 15 zone/species pairs × 2 checks × 2 directions at once. At 5% per direction, that measured as about 4 false alerts showing at any time, which teaches people to ignore alerts. The limits that decide an alert are in `expected.alert_limits`.
 
-| Situation | Sudden "below" | Trend "declining" |
+Measured on generated data, 150 datasets per case (7-day window vs a 28-day baseline unless noted):
+
+| Situation | Sudden alert | Trend alert |
 |---|---|---|
-| Steady (10 a day, or 2 a day) | 3–8% false alarms | 6–7% false alarms |
-| 10 a day, falling 30% in the last week | 80% | n/a |
-| 10 a day, falling 50% in the last week | 98% | n/a |
-| 2 a day, falling 10% a week | n/a | 38% |
-| 2 a day, falling 30% a week | n/a | 86% |
-| 2 a day, falling 60% a week | missed (baseline falls too) | 100% |
+| Steady (6 a day; 2 a day; or 3 d vs 10 d) | 2–5% any direction | 1–3% any direction |
+| 10 a day, last week −30% | 51% | 17% |
+| 10 a day, last week −50% | 98% | 53% |
+| 10 a day, falling 10% a week | 22% | 48% |
+| 2 a day, falling 30% a week | 8% | 54% |
+| 2 a day, falling 60% a week | missed (baseline falls too) | 93% |
+
+Moderate changes that don't reach an alert still show in the 90% range and in `trend.weekly_change_pct` with its 90% interval.
 
 **Slow declines in rare species are hard to see in 5 weeks with one camera.** That's where more Pods earn their cost.
 
@@ -288,6 +292,7 @@ Measured on generated data, 100 datasets each:
   - The version changes with new visits, and only every 60 heartbeats.
   - After data changes, a result is still reused for up to 10 s (30 s for `/api/allocate`), so a busy feed can't stall the dashboard. Responses carry `cached` and `data_age_s`.
   - Measured on the laptop: allocate takes 2.4 s first, then 0.03 s; sightings take 0.9 s first, then 0.03 s.
+  - **Measured on the QNX Pi 5** (3 Pods × 14 days, lowest priority, alongside the running Pod): density 0.28 s, simulation 0.62 s, allocate 3.26 s, sightings 1.02 s on the first call; **9–12 ms** once cached. Loading history through the API is slow on the Pi's SD card (about 0.1 s per write with durable commits), which is fine for real heartbeats every 10 s but makes big fake backfills take minutes.
 - **Tests:** the suite is about 25% faster here (tests skip the per-commit disk sync; the real server keeps it on).
 
 ### `GET /api/params` (built)

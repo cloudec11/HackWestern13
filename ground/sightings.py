@@ -45,6 +45,11 @@ SIMS = 2000
 MIN_BASELINE_DAYS = 3.0      # camera-days of baseline needed before judging anything
 MIN_WINDOW_DAYS = 0.25       # 6 h of camera time in the window
 FULL_BLOCK = 0.5             # a baseline day must have >= 12 h of camera time to be resampled
+# Alerts fire at 1% per direction, not at the edge of the 90% band shown on screen. A screen runs
+# ~15 zone/species pairs x 2 checks x 2 directions at once; at 5% per direction that left about
+# 4 false alerts showing at any time (measured), which teaches people to ignore alerts.
+ALERT_TAIL = 0.01
+Z_ALERT = 2.3263             # normal quantile for 1% per tail
 
 
 def _overlap(intervals: list[tuple[int, int]], a: int, b: int) -> float:
@@ -52,7 +57,7 @@ def _overlap(intervals: list[tuple[int, int]], a: int, b: int) -> float:
     return sum(max(0, min(e, b) - max(s, a)) for s, e in intervals) / DAY_MS
 
 
-def expected_range(blocks: list[tuple[float, int]], window_effort: float, seed: str) -> tuple[float, float, float]:
+def expected_range(blocks: list[tuple[float, int]], window_effort: float, seed: str) -> tuple[float, ...]:
     """Block bootstrap of the window's sighting count from past (effort_days, count) days."""
     pool = [(e, c) for e, c in blocks if e >= FULL_BLOCK]
     m = max(1, round(window_effort))
@@ -72,7 +77,7 @@ def expected_range(blocks: list[tuple[float, int]], window_effort: float, seed: 
         sims.append(c * window_effort / e)
     sims.sort()
     q = lambda f: sims[int(f * (len(sims) - 1))]
-    return q(0.05), q(0.5), q(0.95)
+    return q(0.05), q(0.5), q(0.95), q(ALERT_TAIL), q(1 - ALERT_TAIL)
 
 
 def trend(days: list[tuple[float, int, float]]) -> dict | None:
@@ -107,9 +112,10 @@ def trend(days: list[tuple[float, int, float]]) -> dict | None:
     z90 = 1.6449
     wk = lambda x: round(100 * (math.exp(7 * x) - 1), 1)
     lo, hi = b - z90 * se_b, b + z90 * se_b
+    alo, ahi = b - Z_ALERT * se_b, b + Z_ALERT * se_b      # stricter limits decide the alert
     return {"weekly_change_pct": wk(b), "ci90_pct": [wk(lo), wk(hi)], "days_used": len(pts),
             "dispersion": round(phi, 2),
-            "status": "declining" if hi < 0 else "increasing" if lo > 0 else "no_clear_trend"}
+            "status": "declining" if ahi < 0 else "increasing" if alo > 0 else "no_clear_trend"}
 
 
 def zone_sightings(conn: sqlite3.Connection, zone: dict, window_days: float, baseline_days: int,
@@ -175,10 +181,11 @@ def zone_sightings(conn: sqlite3.Connection, zone: dict, window_days: float, bas
                      note="never seen in the baseline" if actual else "not seen before or now")
             out.append(r)
             continue
-        lo, mid, hi = expected_range(blocks, eff_w, f"{zone['zone_id']}/{sp}/{w0 // DAY_MS}")
+        lo, mid, hi, alo, ahi = expected_range(blocks, eff_w, f"{zone['zone_id']}/{sp}/{w0 // DAY_MS}")
         r["expected"] = {"p5": round(lo, 1), "p50": round(mid, 1), "p95": round(hi, 1)}
         r["change_pct"] = round(100 * (actual - mid) / mid, 1) if mid else None
-        r["status"] = "below" if actual < lo else "above" if actual > hi else "as_expected"
+        r["expected"]["alert_limits"] = [round(alo, 1), round(ahi, 1)]
+        r["status"] = "below" if actual < alo else "above" if actual > ahi else "as_expected"
         out.append(r)
     return out
 

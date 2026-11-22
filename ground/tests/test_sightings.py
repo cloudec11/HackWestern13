@@ -167,3 +167,12 @@ def test_trend_alerts_reach_the_api(client):
     r = client.get("/api/sightings", params={"zone_id": "zone-a", "window_days": 7, "baseline_days": 21}).json()
     trend = [a for a in r["alerts"] if a["kind"] == "trend" and a["species"] == "elephant"]
     assert trend and trend[0]["status"] == "declining"
+
+
+def test_alert_limits_are_stricter_than_the_displayed_band(tmp_path):
+    c = _db(tmp_path)
+    _fill(c, [10.0] * 35, seed=4)
+    r = sightings.zone_sightings(c, ZONE, 7, 28)[0]
+    lo, hi = r["expected"]["alert_limits"]
+    assert lo <= r["expected"]["p5"] and hi >= r["expected"]["p95"]
+    assert sightings.ALERT_TAIL == 0.01
