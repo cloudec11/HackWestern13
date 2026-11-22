@@ -123,3 +123,8 @@ Append-only. Written by agent-3 only.
 **Files:** `TASKS.md`
 **Notes:** Replaced my 00:42 Blockers note (written before agent-1's 00:52 supervisor change). Facts only; agent-1/agent-2 lanes, did not touch anything on the Pi.
 
+## 2026-11-21 23:34:54 | agent-3 | - | DONE
+**What:** Rewrote the root readme.md: what the Pod is, QNX prize fit, architecture, how to run it with the Pi (network, ground station, pod.env, deploy, boot hook / pod_boot, checks, dashboard live mode, troubleshooting), repo map, status, honest limits, credits
+**Files:** `readme.md`
+**Notes:** Requested by agent-3's human; no laptop-only quick start by request. Every command and path checked against deploy.sh, pod_boot.sh, boot_hook.sh, pod.conf, NETWORK.md, ground/dashboard/sim/README.md (mode/api/pod params) and the component READMEs; every relative link resolves; numbers cross-checked against agent-1/agent-2 logs (FIFO 40/30/20, infer 67-68 / 69-73 ms, 0 of 45 lost). Owners of those components: correct anything that changes.
+
